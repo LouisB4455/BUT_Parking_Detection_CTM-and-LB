@@ -6,6 +6,7 @@ Added on March 8, 2026: a function capable of automatically blurring vehicle lic
 This function can then be combined with a webcam for image capture every minutes (input of the function) and automatic upload of blurred photos to Git Hub (output of the function).
 
 **Scheme :**
+Proposed Technical Architecture : 
 Material: Raspberry Pi + Webcam
 ➜ Every minute, the Raspberry Pi takes a photo using the webcam.
 ➜ License plates are automatically detected and blurred.
