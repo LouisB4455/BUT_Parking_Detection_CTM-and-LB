@@ -14,6 +14,9 @@ Material: Raspberry Pi + Webcam
 ➜ After validation, the images are automatically uploaded to GitHub.
 ➜ The blurred images are then processed to determine the number of available parking spaces or the number of occupied spaces in the parking lot. This process can be performed on the Raspberry Pi, on a personal computer, or on a server.
 
+# Update
+After receiving a sample of a real parking image, all the license plate is not visible. Therefore, we are not going to use the anonymization function.
+
 # New fonctionnality - [manual_configuration_of_the_parking](https://github.com/LouisB4455/BUT_Parking_Detection_CTM-and-LB/blob/main/config_parking_via_creation_manuelle_polygone.py)
 Added on March 9, 2026: a function where the user selects the parking spots they want to detect using a photo of the parking lot. They choose 4 points, and the points are automatically connected. They can right-click to cancel a created purple parking spot. To save, they press the 'S' key on the keyboard. The output of this function is a **parking_slots.pkl** who store the coordinate of all the parking slot. 
 
