@@ -38,3 +38,12 @@ YOLO modele used : MODEL_PATH = "yolov8m.pt"
 
 **Issues :**
 On the night picture of the parking, YOLO detect something like a car.
+
+# New amelioration to do
+We have to make new test : 
+1. Detecter automatiquement les lignes blanches
+2. Detecter le nombre de voiture présente dans le parking et le nombre de place vide
+3. Essayer la detection de voiture avec des photos super exposés (à cause du soleil)
+4. Comparaison avec des photos du matin/soir, hiver/été, brouillard/temps clair, etc.
+5. Remplir le rapport de l'overleaf
+6. Consulter le github privé du prof 
