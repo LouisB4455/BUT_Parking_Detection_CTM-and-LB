@@ -4,9 +4,9 @@ from tkinter import *
 from PIL import Image, ImageTk, ImageDraw, ImageFont
 
 # CONFIG
-IMAGE_FOLDER = "images"
-OUTPUT_FOLDER = "Analyse 1 - VF"
-CSV_FILE = "Analyse 1 - VFcsv"
+IMAGE_FOLDER = "../modèle final/resultats_modele_final"
+OUTPUT_FOLDER = "../modèle final/check_manuel_annotated"
+CSV_FILE = "../modèle final/check_manuel_results.csv"
 TOTAL_PLACES = 37
 
 ERROR_CODES = {
@@ -18,7 +18,8 @@ ERROR_CODES = {
     6: "Obstacle non voiture",
     7: "Place non visible",
     8: "Voiture sur 2 places",
-    9: "Double détection"
+    9: "Double détection",
+    10: "Erreur de cadrage de place"
 }
 
 class ParkingAnnotator:

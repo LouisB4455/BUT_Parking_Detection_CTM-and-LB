@@ -3,7 +3,7 @@ import pickle
 import os
 import numpy as np
 
-image_path = "photo/2026-03-09_0719.jpg"
+image_path = "Model 1/image_de_depart_pour_analyse/2026-03-03_1134.jpg"
 pickle_path = "parking_slots.pkl"
 
 # chargement des places existantes
