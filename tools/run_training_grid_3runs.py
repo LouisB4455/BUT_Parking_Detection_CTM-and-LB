@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Root-level wrapper to launch the 3-run grid script from 'modèle final'."""
+"""Root-level wrapper to launch the optional 3-run grid script from tools/."""
 
 from __future__ import annotations
 
@@ -36,9 +36,9 @@ def _normalize_data_arg(args: list[str], model_dir: Path) -> list[str]:
 
 
 def main() -> None:
-    root_dir = Path(__file__).resolve().parent
+    root_dir = Path(__file__).resolve().parent.parent
     model_dir = root_dir / "modèle final"
-    target_script = model_dir / "run_training_grid_3runs.py"
+    target_script = root_dir / "tools" / "training" / "run_training_grid_3runs.py"
 
     if not target_script.exists():
         raise FileNotFoundError(f"Script target introuvable: {target_script}")

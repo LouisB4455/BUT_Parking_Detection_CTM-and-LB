@@ -18,7 +18,7 @@ Pipeline simplifie:
 - prepare_yolo_dataset.py: preparation automatique du dataset YOLO (train/val/test + dataset.yaml)
 - offline_augment_dataset.py: augmentation hors-ligne (10 variations par image)
 - train_batch_yolo.py: entrainement transfer learning sur dataset prepare
-- validate_batch_model.py: validation batch sur images inconnues et export des resultats
+- ../tools/training/validate_batch_model.py: validation batch sur images inconnues et export des resultats
 
 ## Prerequis
 
@@ -95,21 +95,11 @@ Indices suivis dans le rapport:
 
 4. Validation batch sur images inconnues:
 
-python validate_batch_model.py --model "training_runs/batch_yolo/weights/best.pt" --images-dir "../DATA_UNKNOWN" --output-dir "validation_outputs"
+python ../tools/training/validate_batch_model.py --model "training_runs/batch_yolo/weights/best.pt" --images-dir "../DATA_UNKNOWN" --output-dir "validation_outputs"
 
 Lancement rapide entrainement:
 
 run_batch_training.bat
-
-Grille automatique en 3 essais (recommandee pour choisir les hyperparametres):
-
-python run_training_grid_3runs.py --data "batch_dataset/dataset.yaml" --project "training_runs"
-
-Important: la grille utilise strictement le dataset passe via --data (pas de fallback automatique).
-
-Sorties de la grille:
-- training_grid3_summary.csv (classement complet)
-- training_grid3_best.json (meilleur run)
 
 ## Monitoring
 
@@ -137,3 +127,4 @@ Colonnes CSV principales:
   uniquement les anciennes sorties de ce sous-dossier.
 - La zone interdite est tracee en rouge sur les images.
 - La zone de travail (parking) est tracee en bleu sur les images.
+- Les artefacts grid3 generes localement ne sont plus conserves dans le depot.

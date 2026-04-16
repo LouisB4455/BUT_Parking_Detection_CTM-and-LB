@@ -20,12 +20,8 @@ Dossier principal du projet actif.
 - code de calibration / alignement,
 - sorties et rapports generes localement.
 
-### `run_training_grid_3runs.py`
-Wrapper racine qui lance la grille d'entrainement depuis `modèle final/`.
-
-## Scripts Python racine
-
-- `run_training_grid_3runs.py`: lance la grille de 3 essais depuis la racine du dépôt.
+### `tools/`
+Dossier des scripts optionnels (maintenance, tuning, validation avancee).
 
 ## Scripts Python de `modèle final/`
 
@@ -44,22 +40,23 @@ Wrapper racine qui lance la grille d'entrainement depuis `modèle final/`.
 
 - `prepare_yolo_dataset.py`: cree un dataset YOLO `train/val/test` et genere `dataset.yaml`.
 - `offline_augment_dataset.py`: produit des variantes augmentees hors ligne a partir des images/labels source.
-- `verify_data.py`: script de controle / inspection des donnees et des sorties de monitoring.
 
 ### Entrainement YOLO
 
 - `train_batch_yolo.py`: entraine un modele YOLO sur le dataset prepare et ecrit un rapport JSON + HTML.
-- `run_training_grid_3runs.py`: compare 3 configurations d'entrainement et classe les resultats.
-- `validate_batch_model.py`: applique un modele entraine a un dossier d'images inconnues et exporte un CSV de synthese.
 
-### Calibration / alignement
+### Outils optionnels (`tools/`)
 
-- `alignment_ml_utils.py`: fonctions communes pour le modele d'alignement camera.
-- `generate_alignment_synth_dataset.py`: genere un jeu de donnees synthetique pour l'alignement.
-- `train_alignment_offset_model.py`: entraine le modele lineaire de correction de decalage camera.
-- `parking_grid_homography.py`: detection des lignes blanches et calcul d'homographie pour aligner la grille.
-- `calibrate_grid_corners.py`: outil interactif pour marquer les coins de reference et sauvegarder l'homographie.
-- `test_corner_detection.py`: script de test visuel pour la detection des coins de grille.
+- `tools/run_training_grid_3runs.py`: wrapper racine pour lancer la grille 3 runs depuis `tools/training/`.
+- `tools/training/run_training_grid_3runs.py`: compare 3 configurations d'entrainement et classe les resultats.
+- `tools/training/validate_batch_model.py`: applique un modele entraine a des images inconnues et exporte un CSV de synthese.
+- `tools/training/verify_data.py`: verification rapide de structure DATA injectee dans le monitoring HTML.
+- `tools/alignment/alignment_ml_utils.py`: fonctions communes du module d'alignement camera.
+- `tools/alignment/generate_alignment_synth_dataset.py`: generation de dataset synthetique pour l'alignement.
+- `tools/alignment/train_alignment_offset_model.py`: entrainement du modele lineaire d'alignement.
+- `tools/alignment/parking_grid_homography.py`: detection de lignes / homographie de grille.
+- `tools/alignment/calibrate_grid_corners.py`: outil interactif de calibration de coins.
+- `tools/alignment/test_corner_detection.py`: test visuel de detection des coins.
 
 ### Sorties et launchers
 
@@ -83,5 +80,5 @@ Ces dossiers contiennent des sorties de train ou de pipeline, pas du code applic
 
 ## Notes
 
-- Le projet actif n'utilise plus les anciens dossiers `Model 1/`, `Model 3/` et `module_d_analyse_des_resultats/`.
+- Les rapports grid generes localement ne sont plus conserves dans le depot.
 - La documentation de fonctionnement detaillee reste dans `modèle final/README.md`.

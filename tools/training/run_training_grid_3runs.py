@@ -137,7 +137,7 @@ def main() -> None:
         },
     ]
 
-    train_script = Path(__file__).resolve().parent / "train_batch_yolo.py"
+    train_script = Path(__file__).resolve().parents[2] / "modèle final" / "train_batch_yolo.py"
 
     for run in runs:
         run["report_json"] = f"{run['name']}_report.json"

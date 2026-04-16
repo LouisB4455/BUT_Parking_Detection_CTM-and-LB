@@ -1,4 +1,0 @@
-rank,run,weights,epochs,imgsz,batch,val_map50_95,val_precision,val_recall,val_box_loss,score
-1,grid3_s_832_b8,yolov8s.pt,120,832,8,0.839341,0.987851,0.938206,0.660710,0.845890
-2,grid3_s_640_b16,yolov8s.pt,120,640,16,0.837316,0.983070,0.942308,0.645620,0.844676
-3,grid3_n_640_b16,yolov8n.pt,100,640,16,0.813023,0.991865,0.937884,0.600460,0.831264
