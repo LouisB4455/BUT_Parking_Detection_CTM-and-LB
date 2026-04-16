@@ -300,7 +300,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--forbidden-zones", default="zones_interdites.pkl")
     parser.add_argument("--work-zone", default="parking_zone.pkl")
 
-    parser.add_argument("--model-path", default="yolov8m.pt")
+    parser.add_argument("--model-path", default="parking_detector_corrections.pt")
     parser.add_argument("--conf", type=float, default=0.5)
     parser.add_argument("--workzone-overlap-threshold", type=float, default=0.25)
     parser.add_argument("--workzone-min-overlap-pixels", type=float, default=25.0)
