@@ -25,7 +25,6 @@ modèle final/*.pkl
 modèle final/*.npz
 modèle final/*preview*.jpg
 modèle final/manual_review_queue.txt
-modèle final/parking_detector_corrections.pt
 modèle final/resultats_modele_final/*.jpg
 modèle final/yolo_correction_dataset/
 modèle final/yolov8n.pt

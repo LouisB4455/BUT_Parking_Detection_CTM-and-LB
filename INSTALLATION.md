@@ -48,7 +48,8 @@ python analyse_modele_final.py --help
 ## Dossiers importants à créer/remplir
 
 - **`DATA/`** : Ajoute tes images par date (ex: `DATA/2026-03-25/`)
-- **Modèles `.pt`** : `yolov8m.pt` sera téléchargé auto par YOLO
+- **Modèles pré-entraînés** : `parking_detector_corrections.pt` et `yolov8m.pt` sont inclus dans le repo
+- **Modèles YOLO supplémentaires** : Téléchargés automatiquement par YOLO si besoin
 
 ## Commandes principales
 
