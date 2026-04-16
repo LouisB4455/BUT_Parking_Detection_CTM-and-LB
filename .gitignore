@@ -16,3 +16,20 @@ DATA/
 
 # Optional logs/reports
 *.tmp
+
+# Local generated artifacts (keep local, do not track)
+modèle final/*.pkl
+modèle final/*.npz
+modèle final/*preview*.jpg
+modèle final/manual_review_queue.txt
+modèle final/parking_detector_corrections.pt
+modèle final/resultats_modele_final/*.jpg
+modèle final/yolo_correction_dataset/
+modèle final/yolov8n.pt
+modèle final/yolov8s.pt
+modèle final/zones_interdites.pkl.bak
+training_batch_last_report.html
+training_batch_last_report.json
+yolov8m.pt
+yolov8s.pt
+zones_interdites.pkl
