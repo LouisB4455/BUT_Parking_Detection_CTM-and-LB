@@ -8,31 +8,23 @@ from datetime import datetime
 HISTORY_CSV = "resultats_modele_final_history.csv"
 RESULT_CSV = "resultats_modele_final.csv"
 HTML_FILE = "monitoring_final_simple.html"
-EXPECTED_FIELDS = {
-    "timestamp",
-    "image",
-    "total_cars",
-    "cars_in_forbidden",
-    "cars_legal",
-    "alignment_source",
-    "alignment_confidence",
-    "uncertain",
-    "processing_seconds",
-}
-
 CURRENT_SCHEMA_FIELDS = [
+    "image_name",
     "timestamp",
-    "image",
-    "total_cars",
-    "cars_in_forbidden",
-    "cars_legal",
-    "line_delta_dx",
-    "line_delta_dy",
+    "Nb voitures",
+    "Nb voitures légales",
+    "places_libres",
+    "places_occupees",
+    "places_hors",
+    "temps_de_traitement",
+    "username",
     "alignment_source",
     "alignment_confidence",
     "uncertain",
-    "processing_seconds",
+    "api_status",
 ]
+
+EXPECTED_FIELDS = set(CURRENT_SCHEMA_FIELDS)
 
 
 def to_int(v, default=0):
@@ -42,42 +34,58 @@ def to_int(v, default=0):
         return default
 
 
+def first_value(row, *keys, default=""):
+    for key in keys:
+        value = row.get(key)
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text != "":
+            return text
+    return default
+
+
 def parse_capture_timestamp(image_value):
     if not image_value:
         return ""
 
-    text = str(image_value).replace("\\", "/")
-    match = re.search(r"(\d{4}-\d{2}-\d{2})/(\d{4}-\d{2}-\d{2}) (\d{2})_(\d{2})_(\d{2})", text)
+    text = os.path.basename(str(image_value).replace("\\", "/"))
+    match = re.search(r"((?:19|20)\d{2}-\d{2}-\d{2})[^0-9]*(\d{2})(\d{2})(?:(\d{2}))?", text)
     if not match:
         return ""
 
-    date_part = match.group(2)
-    hour = match.group(3)
-    minute = match.group(4)
-    second = match.group(5)
+    date_part = match.group(1)
+    hour = match.group(2)
+    minute = match.group(3)
+    second = match.group(4) or "00"
     return f"{date_part} {hour}:{minute}:{second}"
 
 
 def build_result(row):
-    image_value = row.get("image", "")
-    capture_timestamp = parse_capture_timestamp(image_value)
-    timestamp_value = row.get("timestamp", "")
-    display_timestamp = capture_timestamp or timestamp_value
-    sort_key = display_timestamp or timestamp_value or image_value
+    image_value = first_value(row, "image_name", "image", default="")
+    timestamp_value = first_value(row, "timestamp", default="")
+    display_timestamp = timestamp_value
+    sort_key = timestamp_value or image_value
+
+    total_cars = to_int(first_value(row, "Nb voitures", "total_cars", default=0))
+    legal_cars = to_int(first_value(row, "Nb voitures légales", "cars_legal", default=0))
+    illegal_cars = to_int(first_value(row, "places_hors", "cars_in_forbidden", default=max(0, total_cars - legal_cars)))
+    processing_seconds = float(first_value(row, "temps_de_traitement", "processing_seconds", default=0.0) or 0.0)
 
     return {
         "timestamp": timestamp_value,
-        "capture_timestamp": capture_timestamp,
+        "capture_timestamp": "",
         "display_timestamp": display_timestamp,
         "sort_key": sort_key,
         "image": image_value,
-        "total_cars": to_int(row.get("total_cars", 0)),
-        "cars_in_forbidden": to_int(row.get("cars_in_forbidden", 0)),
-        "cars_legal": to_int(row.get("cars_legal", 0)),
-        "alignment_source": row.get("alignment_source", "none"),
-        "alignment_confidence": row.get("alignment_confidence", ""),
-        "uncertain": to_int(row.get("uncertain", 0)),
-        "processing_seconds": float(row.get("processing_seconds", 0.0) or 0.0),
+        "total_cars": total_cars,
+        "cars_in_forbidden": illegal_cars,
+        "cars_legal": legal_cars,
+        "alignment_source": first_value(row, "alignment_source", default="disabled"),
+        "alignment_confidence": first_value(row, "alignment_confidence", default=""),
+        "uncertain": to_int(first_value(row, "uncertain", default=0)),
+        "processing_seconds": processing_seconds,
+        "api_status": first_value(row, "api_status", default=""),
     }
 
 
@@ -87,17 +95,19 @@ def write_results_csv(csv_path, results):
         writer.writeheader()
         for result in results:
             writer.writerow({
+                "image_name": result.get("image", ""),
                 "timestamp": result.get("timestamp", ""),
-                "image": result.get("image", ""),
-                "total_cars": result.get("total_cars", 0),
-                "cars_in_forbidden": result.get("cars_in_forbidden", 0),
-                "cars_legal": result.get("cars_legal", 0),
-                "line_delta_dx": result.get("line_delta_dx", "0.0"),
-                "line_delta_dy": result.get("line_delta_dy", "0.0"),
+                "Nb voitures": result.get("total_cars", 0),
+                "Nb voitures légales": result.get("cars_legal", 0),
+                "places_libres": max(0, 37 - int(result.get("cars_legal", 0) or 0)),
+                "places_occupees": result.get("cars_legal", 0),
+                "places_hors": result.get("cars_in_forbidden", 0),
+                "temps_de_traitement": f"{float(result.get('processing_seconds', 0.0) or 0.0):.6f}",
+                "username": result.get("username", "Cyriaque"),
                 "alignment_source": result.get("alignment_source", "none"),
                 "alignment_confidence": result.get("alignment_confidence", ""),
                 "uncertain": result.get("uncertain", 0),
-                "processing_seconds": f"{float(result.get('processing_seconds', 0.0) or 0.0):.6f}",
+                "api_status": result.get("api_status", ""),
             })
 
 
@@ -190,13 +200,15 @@ def main():
     stats = {
         "totalCars": 0,
         "forbiddenCars": 0,
-        "legalCars": 0
+        "legalCars": 0,
+        "apiStatus": "Aucune donnée",
     }
     
     if recent:
         stats["totalCars"] = recent[-1]["total_cars"]
         stats["forbiddenCars"] = recent[-1]["cars_in_forbidden"]
         stats["legalCars"] = recent[-1]["cars_legal"]
+        stats["apiStatus"] = recent[-1].get("api_status", "") or "Aucun statut"
     
     last_update = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     

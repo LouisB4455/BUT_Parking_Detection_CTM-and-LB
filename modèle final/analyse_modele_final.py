@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
+import requests
 from ultralytics import YOLO
 
 Polygon = List[Tuple[int, int]]
@@ -53,6 +54,75 @@ def extract_year_hint(path_value: Optional[str]) -> Optional[int]:
     if not match:
         return None
     return int(match.group(0))
+
+
+def parse_capture_timestamp_from_name(image_name: str) -> str:
+    if not image_name:
+        return ""
+
+    match = re.search(
+        r"(?P<date>\d{4}-\d{2}-\d{2})[_\-](?P<hour>\d{2})(?P<minute>\d{2})(?:(?P<second>\d{2}))?",
+        image_name,
+    )
+    if not match:
+        return ""
+
+    second = match.group("second") or "00"
+    return f"{match.group('date')} {match.group('hour')}:{match.group('minute')}:{second}"
+
+
+def parse_capture_timestamp_from_path(image_path: str) -> str:
+    return parse_capture_timestamp_from_name(os.path.basename(image_path))
+
+
+def first_non_empty(row: Dict[str, Any], *keys: str, default: str = "") -> str:
+    for key in keys:
+        value = row.get(key)
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text:
+            return text
+    return default
+
+
+def build_api_payload(
+    image_name: str,
+    timestamp: str,
+    nb_voitures: int,
+    nb_voitures_legales: int,
+    places_libres: int,
+    places_occupees: int,
+    places_hors: int,
+    processing_seconds: float,
+    alignment_confidence: float,
+    username: str,
+) -> Dict[str, object]:
+    return {
+        "image_name": image_name,
+        "timestamp": timestamp,
+        "Nb voitures": int(nb_voitures),
+        "Nb voitures légales": int(nb_voitures_legales),
+        "places_libres": int(places_libres),
+        "places_occupees": int(places_occupees),
+        "places_hors": int(places_hors),
+        "temps_de_traitement": round(float(processing_seconds), 2),
+        "alignment_confidence": round(float(alignment_confidence), 4),
+        "username": username,
+    }
+
+
+def send_parking_status(api_url: str, payload: Dict[str, object]) -> bool:
+    if not api_url:
+        return False
+
+    try:
+        response = requests.post(api_url, json=payload, timeout=10)
+        response.raise_for_status()
+        return True
+    except Exception as exc:
+        print(f"  WARNING: API update failed for {payload.get('image_name', '')}: {exc}")
+        return False
 
 
 def normalize_polygon(raw: Any) -> Optional[Polygon]:
@@ -266,15 +336,17 @@ def prune_rows_for_selected_images(
         return []
 
     targets = {to_image_relpath(p, input_root) for p in image_files}
+    targets.update({os.path.basename(p) for p in image_files})
     kept_rows: List[List[str]] = []
 
     with open(csv_path, mode="r", newline="", encoding="utf-8") as f_in:
         reader = csv.DictReader(f_in)
         for row in reader:
-            image_rel = (row.get("image") or "").strip().replace("\\", "/")
-            if image_rel in targets:
+            image_rel = first_non_empty(row, "image_name", "image", default="").replace("\\", "/")
+            image_base = os.path.basename(image_rel)
+            if image_rel in targets or image_base in targets:
                 continue
-            kept_rows.append([(row.get(field) or "") for field in expected_fields])
+            kept_rows.append(normalize_existing_csv_row(row, expected_fields))
 
     return kept_rows
 
@@ -287,8 +359,60 @@ def load_existing_rows(csv_path: str, expected_fields: List[str]) -> List[List[s
     with open(csv_path, mode="r", newline="", encoding="utf-8") as f_in:
         reader = csv.DictReader(f_in)
         for row in reader:
-            out.append([(row.get(field) or "") for field in expected_fields])
+            out.append(normalize_existing_csv_row(row, expected_fields))
     return out
+
+
+def normalize_existing_csv_row(row: Dict[str, Any], expected_fields: List[str]) -> List[str]:
+    image_value = first_non_empty(row, "image_name", "image", default="")
+    image_value = image_value.replace("\\", "/")
+    timestamp_value = parse_capture_timestamp_from_name(os.path.basename(image_value))
+    if not timestamp_value:
+        timestamp_value = first_non_empty(row, "timestamp", "capture_timestamp", "display_timestamp", default="")
+
+    total_cars = first_non_empty(row, "Nb voitures", "total_cars", default="0")
+    legal_cars = first_non_empty(row, "Nb voitures légales", "cars_legal", default="0")
+    illegal_cars = first_non_empty(row, "places_hors", "cars_in_forbidden", default="")
+    processing_seconds = first_non_empty(row, "temps_de_traitement", "processing_seconds", default="0")
+    username = first_non_empty(row, "username", default="Cyriaque")
+    alignment_source = first_non_empty(row, "alignment_source", default="disabled")
+    alignment_confidence = first_non_empty(row, "alignment_confidence", default="")
+    uncertain = first_non_empty(row, "uncertain", default="0")
+    api_status = first_non_empty(row, "api_status", default="")
+
+    try:
+        legal_int = int(float(legal_cars or 0))
+    except Exception:
+        legal_int = 0
+    try:
+        total_int = int(float(total_cars or 0))
+    except Exception:
+        total_int = 0
+    try:
+        illegal_int = int(float(illegal_cars)) if illegal_cars != "" else max(0, total_int - legal_int)
+    except Exception:
+        illegal_int = max(0, total_int - legal_int)
+
+    places_libres = max(0, 37 - legal_int)
+    places_occupees = legal_int
+
+    mapping = {
+        "image_name": image_value,
+        "timestamp": timestamp_value,
+        "Nb voitures": str(total_int),
+        "Nb voitures légales": str(legal_int),
+        "places_libres": str(places_libres),
+        "places_occupees": str(places_occupees),
+        "places_hors": str(illegal_int),
+        "temps_de_traitement": str(processing_seconds),
+        "username": username,
+        "alignment_source": alignment_source,
+        "alignment_confidence": alignment_confidence,
+        "uncertain": uncertain,
+        "api_status": api_status,
+    }
+
+    return [mapping.get(field, "") for field in expected_fields]
 
 
 def parse_args() -> argparse.Namespace:
@@ -311,6 +435,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-folder", default="resultats_modele_final")
     parser.add_argument("--csv-path", default="resultats_modele_final.csv")
     parser.add_argument("--history-csv", default="resultats_modele_final_history.csv")
+    parser.add_argument("--api-url", default="http://lelabodelouis.fr/parking_status/api_update.php")
+    parser.add_argument(
+        "--api-min-interval-seconds",
+        type=float,
+        default=0.5,
+        help="Intervalle minimum entre 2 envois API consecutifs (secondes)",
+    )
+    parser.add_argument("--username", default="Cyriaque")
     parser.add_argument("--cleanup", action="store_true")
 
     return parser.parse_args()
@@ -320,17 +452,19 @@ def main():
     args = parse_args()
 
     fields = [
+        "image_name",
         "timestamp",
-        "image",
-        "total_cars",
-        "cars_in_forbidden",
-        "cars_legal",
-        "line_delta_dx",
-        "line_delta_dy",
+        "Nb voitures",
+        "Nb voitures légales",
+        "places_libres",
+        "places_occupees",
+        "places_hors",
+        "temps_de_traitement",
+        "username",
         "alignment_source",
         "alignment_confidence",
         "uncertain",
-        "processing_seconds",
+        "api_status",
     ]
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -368,17 +502,10 @@ def main():
         print("No images found. Exiting.")
         return
 
-    kept_current_rows: List[List[str]] = []
     kept_history_rows: List[List[str]] = []
     if args.cleanup:
         removed = cleanup_selected_outputs(image_files, args.input_folder, args.output_folder)
         print(f"Removed {removed} old output image(s)")
-        kept_current_rows = prune_rows_for_selected_images(
-            args.csv_path,
-            image_files,
-            args.input_folder,
-            fields,
-        )
         kept_history_rows = prune_rows_for_selected_images(
             args.history_csv,
             image_files,
@@ -387,21 +514,20 @@ def main():
         )
         print(
             "Pruned CSV rows for selected images: "
-            f"current_kept={len(kept_current_rows)} history_kept={len(kept_history_rows)}"
+            f"history_kept={len(kept_history_rows)}"
         )
     else:
-        kept_current_rows = load_existing_rows(args.csv_path, fields)
         kept_history_rows = load_existing_rows(args.history_csv, fields)
 
     with open(args.csv_path, mode="w", newline="", encoding="utf-8") as f_csv:
         writer = csv.writer(f_csv)
         writer.writerow(fields)
-        for row in kept_current_rows:
-            writer.writerow(row)
 
         history_rows = []
         last_forbidden_profile = None
         last_work_profile = None
+
+        last_api_send_monotonic: Optional[float] = None
 
         for frame_idx, img_path in enumerate(image_files):
             print(f"[{frame_idx + 1}/{len(image_files)}] Processing: {img_path}")
@@ -487,12 +613,12 @@ def main():
                 if max_center_signed_distance >= -args.forbidden_center_tolerance_px:
                     car["forbidden"] = True
 
-            counted_cars = [car for car in cars if not car.get("outside_work_zone", False)]
-            total_cars = len(counted_cars)
-            cars_in_forbidden = sum(1 for car in counted_cars if car.get("forbidden", False))
-
-            cars_legal = total_cars - cars_in_forbidden
-            uncertain = 1 if total_cars == 0 else 0
+            nb_voitures = len(cars)
+            nb_voitures_legales = sum(1 for car in cars if not car.get("outside_work_zone", False) and not car.get("forbidden", False))
+            places_hors = max(0, nb_voitures - nb_voitures_legales)
+            places_occupees = nb_voitures_legales
+            places_libres = max(0, 37 - nb_voitures_legales)
+            uncertain = 1 if nb_voitures == 0 else 0
             frame_confidence = float(np.mean(det_confidences)) if det_confidences else 0.0
 
             output_frame = frame.copy()
@@ -534,7 +660,7 @@ def main():
             cv2.rectangle(output_frame, (15, 15), (820, 70), (0, 0, 0), -1)
             cv2.putText(
                 output_frame,
-                f"Total: {total_cars}  Forbidden: {cars_in_forbidden}  Legal: {cars_legal}",
+                f"Total: {nb_voitures}  Hors: {places_hors}  Legales: {nb_voitures_legales}",
                 (30, 50),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.85,
@@ -549,21 +675,55 @@ def main():
             processing_seconds = max(0.0, time.perf_counter() - frame_start)
 
             rel_image = to_image_relpath(img_path, args.input_folder)
+            image_name = rel_image
+            capture_timestamp = parse_capture_timestamp_from_path(img_path)
+            if not capture_timestamp:
+                capture_timestamp = datetime.fromtimestamp(os.path.getmtime(img_path)).strftime("%Y-%m-%d %H:%M:%S")
             row = [
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                rel_image,
-                total_cars,
-                cars_in_forbidden,
-                cars_legal,
-                "0.0",
-                "0.0",
+                image_name,
+                capture_timestamp,
+                nb_voitures,
+                nb_voitures_legales,
+                places_libres,
+                places_occupees,
+                places_hors,
+                f"{processing_seconds:.6f}",
+                args.username,
                 "disabled",
                 f"{frame_confidence:.4f}",
                 uncertain,
-                f"{processing_seconds:.6f}",
+                "",
             ]
+
+            api_payload = build_api_payload(
+                image_name=image_name,
+                timestamp=capture_timestamp,
+                nb_voitures=nb_voitures,
+                nb_voitures_legales=nb_voitures_legales,
+                places_libres=places_libres,
+                places_occupees=places_occupees,
+                places_hors=places_hors,
+                processing_seconds=processing_seconds,
+                alignment_confidence=frame_confidence,
+                username=args.username,
+            )
+
+            min_interval = max(0.0, float(args.api_min_interval_seconds))
+            if min_interval > 0 and last_api_send_monotonic is not None:
+                elapsed = time.perf_counter() - last_api_send_monotonic
+                remaining = min_interval - elapsed
+                if remaining > 0:
+                    print(f"  API pacing: wait {remaining:.3f}s")
+                    time.sleep(remaining)
+
+            last_api_send_monotonic = time.perf_counter()
+            api_sent = send_parking_status(args.api_url, api_payload)
+            api_status = "envoyé" if api_sent else "échec"
+            row[-1] = api_status
             writer.writerow(row)
             history_rows.append(row)
+            print(f"  API payload: {api_payload}")
+            print(f"  API status: {api_status}")
 
     with open(args.history_csv, mode="w", newline="", encoding="utf-8") as f_hist:
         hist_writer = csv.writer(f_hist)

@@ -87,6 +87,8 @@ def _run_one(train_script: Path, params: dict[str, str], device: str, workers: i
         params["report_json"],
         "--report-html",
         params["report_html"],
+        "--publish-model-path",
+        "",
     ]
     if device:
         cmd.extend(["--device", device])

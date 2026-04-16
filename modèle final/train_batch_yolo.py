@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import shutil
 from datetime import datetime
 from pathlib import Path
 
@@ -24,6 +25,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", default="", help="Examples: cpu, 0, 0,1")
     parser.add_argument("--project", default="training_runs")
     parser.add_argument("--name", default="batch_yolo")
+    parser.add_argument(
+        "--publish-model-path",
+        default="parking_detector_corrections.pt",
+        help="Where to copy the best checkpoint after training",
+    )
     parser.add_argument("--report-json", default="training_batch_last_report.json")
     parser.add_argument("--report-html", default="training_batch_last_report.html")
     return parser.parse_args()
@@ -97,6 +103,8 @@ def _write_reports(
     run_dir: Path,
     data_yaml: Path,
     weights_path: Path,
+    publish_model_path: Path | None,
+    replaced_previous_model: bool,
     metrics: dict[str, float | int | None],
 ) -> None:
     payload = {
@@ -105,6 +113,8 @@ def _write_reports(
         "run_dir": str(run_dir),
         "data_yaml": str(data_yaml),
         "best_weights": str(weights_path),
+        "publish_model_path": str(publish_model_path) if publish_model_path else None,
+        "replaced_previous_model": replaced_previous_model,
         "metrics": metrics,
     }
     report_json.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -133,6 +143,8 @@ def _write_reports(
     <div>Run: <code>{run_dir}</code></div>
     <div>Dataset: <code>{data_yaml}</code></div>
     <div>Poids best: <code>{weights_path}</code></div>
+        <div>Modèle publié: <code>{publish_model_path if publish_model_path else 'N/A'}</code></div>
+        <div>Ancien modèle remplacé: <strong>{'oui' if replaced_previous_model else 'non'}</strong></div>
   </div>
 
   <div class=\"card\">
@@ -193,6 +205,14 @@ def main() -> None:
     results_csv = run_dir / "results.csv"
     metrics = _read_last_metrics(results_csv)
 
+    publish_model_path = Path(args.publish_model_path).resolve() if args.publish_model_path else None
+    replaced_previous_model = False
+    if publish_model_path is not None:
+        previous_exists = publish_model_path.exists()
+        publish_model_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(best_weights, publish_model_path)
+        replaced_previous_model = previous_exists
+
     best_model = YOLO(str(best_weights))
     train_eval = best_model.val(data=str(data_yaml), split="train", verbose=False)
     val_eval = best_model.val(data=str(data_yaml), split="val", verbose=False)
@@ -222,6 +242,8 @@ def main() -> None:
         run_dir=run_dir,
         data_yaml=data_yaml,
         weights_path=best_weights,
+        publish_model_path=publish_model_path,
+        replaced_previous_model=replaced_previous_model,
         metrics=metrics,
     )
 
@@ -229,6 +251,8 @@ def main() -> None:
     print(f"- run name: {args.name}")
     print(f"- project dir: {Path(args.project).resolve()}")
     print(f"- best checkpoint: {best_weights}")
+    print(f"- published model: {publish_model_path if publish_model_path else 'N/A'}")
+    print(f"- replaced previous model: {'yes' if replaced_previous_model else 'no'}")
     print(f"- last checkpoint: {run_dir / 'weights' / 'last.pt'}")
     print(f"- report json: {report_json}")
     print(f"- report html: {report_html}")

@@ -78,9 +78,13 @@ python prepare_yolo_dataset.py --images-dir "../DATA/DATA_1" --labels-dir "../DA
 
 python train_batch_yolo.py --data "batch_dataset/dataset.yaml" --weights "yolov8n.pt" --epochs 100 --imgsz 640 --batch 16
 
+Le meilleur modele est ensuite publie automatiquement vers `parking_detector_corrections.pt`.
+Si ce fichier existait deja, il est remplace par la nouvelle version.
+
 Rapport de fin d'entrainement genere automatiquement:
 - training_batch_last_report.json
 - training_batch_last_report.html
+- le rapport indique aussi si l'ancien modele a ete remplace
 
 Indices suivis dans le rapport:
 - precision train
@@ -110,16 +114,20 @@ python mettre_a_jour_monitoring_html.py
 
 ## Sorties
 
-- resultats_modele_final.csv: sortie du run courant
-- resultats_modele_final_history.csv: historique cumule
-- resultats_modele_final/*.jpg: images annotees
+
+Colonnes principales utilisees pour l'export JSON / CSV:
+- image_name
+- timestamp
+- Nb voitures
+- Nb voitures légales
+- places_libres
+- places_occupees
+- places_hors
+- temps_de_traitement
+- username
 
 Colonnes CSV principales:
-- total_cars
 - cars_in_forbidden
-- cars_legal
-- alignment_source
-- uncertain_frame
 
 ## Notes
 
