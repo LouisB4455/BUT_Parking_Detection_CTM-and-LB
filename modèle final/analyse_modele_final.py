@@ -256,6 +256,41 @@ def cleanup_selected_outputs(image_files: List[str], input_root: str, output_fol
     return removed
 
 
+def prune_rows_for_selected_images(
+    csv_path: str,
+    image_files: List[str],
+    input_root: str,
+    expected_fields: List[str],
+) -> List[List[str]]:
+    if not os.path.exists(csv_path):
+        return []
+
+    targets = {to_image_relpath(p, input_root) for p in image_files}
+    kept_rows: List[List[str]] = []
+
+    with open(csv_path, mode="r", newline="", encoding="utf-8") as f_in:
+        reader = csv.DictReader(f_in)
+        for row in reader:
+            image_rel = (row.get("image") or "").strip().replace("\\", "/")
+            if image_rel in targets:
+                continue
+            kept_rows.append([(row.get(field) or "") for field in expected_fields])
+
+    return kept_rows
+
+
+def load_existing_rows(csv_path: str, expected_fields: List[str]) -> List[List[str]]:
+    if not os.path.exists(csv_path):
+        return []
+
+    out: List[List[str]] = []
+    with open(csv_path, mode="r", newline="", encoding="utf-8") as f_in:
+        reader = csv.DictReader(f_in)
+        for row in reader:
+            out.append([(row.get(field) or "") for field in expected_fields])
+    return out
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Modele Final simplifie - uniquement zones rouge (interdite) et bleue (parking)"
@@ -283,6 +318,20 @@ def parse_args() -> argparse.Namespace:
 
 def main():
     args = parse_args()
+
+    fields = [
+        "timestamp",
+        "image",
+        "total_cars",
+        "cars_in_forbidden",
+        "cars_legal",
+        "line_delta_dx",
+        "line_delta_dy",
+        "alignment_source",
+        "alignment_confidence",
+        "uncertain",
+        "processing_seconds",
+    ]
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -319,25 +368,36 @@ def main():
         print("No images found. Exiting.")
         return
 
+    kept_current_rows: List[List[str]] = []
+    kept_history_rows: List[List[str]] = []
     if args.cleanup:
         removed = cleanup_selected_outputs(image_files, args.input_folder, args.output_folder)
         print(f"Removed {removed} old output image(s)")
+        kept_current_rows = prune_rows_for_selected_images(
+            args.csv_path,
+            image_files,
+            args.input_folder,
+            fields,
+        )
+        kept_history_rows = prune_rows_for_selected_images(
+            args.history_csv,
+            image_files,
+            args.input_folder,
+            fields,
+        )
+        print(
+            "Pruned CSV rows for selected images: "
+            f"current_kept={len(kept_current_rows)} history_kept={len(kept_history_rows)}"
+        )
+    else:
+        kept_current_rows = load_existing_rows(args.csv_path, fields)
+        kept_history_rows = load_existing_rows(args.history_csv, fields)
 
     with open(args.csv_path, mode="w", newline="", encoding="utf-8") as f_csv:
         writer = csv.writer(f_csv)
-        writer.writerow([
-            "timestamp",
-            "image",
-            "total_cars",
-            "cars_in_forbidden",
-            "cars_legal",
-            "line_delta_dx",
-            "line_delta_dy",
-            "alignment_source",
-            "alignment_confidence",
-            "uncertain",
-            "processing_seconds",
-        ])
+        writer.writerow(fields)
+        for row in kept_current_rows:
+            writer.writerow(row)
 
         history_rows = []
         last_forbidden_profile = None
@@ -505,23 +565,11 @@ def main():
             writer.writerow(row)
             history_rows.append(row)
 
-    history_exists = os.path.exists(args.history_csv)
-    with open(args.history_csv, mode="a", newline="", encoding="utf-8") as f_hist:
+    with open(args.history_csv, mode="w", newline="", encoding="utf-8") as f_hist:
         hist_writer = csv.writer(f_hist)
-        if not history_exists:
-            hist_writer.writerow([
-                "timestamp",
-                "image",
-                "total_cars",
-                "cars_in_forbidden",
-                "cars_legal",
-                "line_delta_dx",
-                "line_delta_dy",
-                "alignment_source",
-                "alignment_confidence",
-                "uncertain",
-                "processing_seconds",
-            ])
+        hist_writer.writerow(fields)
+        for row in kept_history_rows:
+            hist_writer.writerow(row)
         for row in history_rows:
             hist_writer.writerow(row)
 
