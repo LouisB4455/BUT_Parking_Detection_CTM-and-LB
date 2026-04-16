@@ -1,6 +1,16 @@
 # BUT_Parking_Detection_CTM-and-LB
 Parking Project Cyriaque T. M. and Louis B.
 
+## Etat de la documentation
+
+Ce README est principalement historique.
+
+Pour le pipeline actuellement utilise (analyse, correction manuelle, monitoring, reentrainement), se referer a:
+
+- `modèle final/README.md`
+- `modèle final/CORRECTION_GUI_README.md`
+- `modèle final/CORRECTION_INTERACTIVE_GUIDE.md`
+
 # New fonctionnality - [license_plate_anonymization](https://github.com/LouisB4455/BUT_Parking_Detection_CTM-and-LB/blob/main/license_plate_anonymization)
 Added on March 8, 2026: a function capable of automatically blurring vehicle license plates.
 This function can then be combined with a webcam for image capture every minutes (input of the function) and automatic upload of blurred photos to Git Hub (output of the function).

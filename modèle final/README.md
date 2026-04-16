@@ -1,14 +1,24 @@
-# Modele Final (v1)
+# Modele Final (v2)
 
-Premiere version qui combine:
-- recalage automatique si la camera bouge legerement
-- detection place libre/occupee par polygones de places
-- detection de stationnement illegal hors places officielles
+Pipeline simplifie:
+- detection de voitures
+- comptage total
+- comptage voitures en zone interdite
+- comptage voitures legales = total - interdites
+- affichage des zones statiques: rouge (interdite) + bleu (zone parking)
 
-## Fichiers
+## Fichiers principaux
 
 - analyse_modele_final.py: pipeline principal
-- config_zones_interdites.py: outil manuel pour definir les zones interdites
+- config_zones_interdites.py: edition des zones interdites
+- parking_zone.pkl: zone de travail/parking (zone bleue)
+- mettre_a_jour_monitoring_html.py: injecte les donnees dans le HTML
+- interface_selection_data.py: interface locale de selection des sous-dossiers DATA
+- monitoring_final_simple.html: dashboard local (sans serveur)
+- prepare_yolo_dataset.py: preparation automatique du dataset YOLO (train/val/test + dataset.yaml)
+- offline_augment_dataset.py: augmentation hors-ligne (10 variations par image)
+- train_batch_yolo.py: entrainement transfer learning sur dataset prepare
+- validate_batch_model.py: validation batch sur images inconnues et export des resultats
 
 ## Prerequis
 
@@ -17,105 +27,113 @@ Bibliotheques Python:
 - numpy
 - ultralytics
 
-## Etape 1 - Configurer les zones interdites (optionnel mais recommande)
+## 1) Definir la zone interdite
 
 Exemple:
 
-python config_zones_interdites.py --image "../Model 1/image_de_depart_pour_analyse/2026-03-03_1034.jpg" --output zones_interdites.pkl
+python config_zones_interdites.py --image "../DATA/2026-03-03/2026-03-03_1134.jpg" --output zones_interdites.pkl
 
-Commandes dans la fenetre:
+Touches:
 - clic gauche: ajouter un point
-- touche N: valider une zone (>= 3 points)
+- N: valider la zone en cours
+- S: sauvegarder et quitter
+- R: reset zone en cours
 - clic droit dans une zone: supprimer la zone
-- touche R: annuler zone en cours
-- touche S: sauvegarder
+- Q: quitter sans sauvegarder
 
-## Etape 2 - Lancer l'analyse
+## 2) Lancer l'analyse
 
-Exemple:
+Tous les dossiers DATA:
 
-python analyse_modele_final.py \
-  --input-folder "../Model 1/image_de_depart_pour_analyse" \
-  --parking-slots "../Model 1/parking_slots.pkl" \
-  --parking-zone "../Model 3/detection_zone_2.pkl" \
-  --forbidden-zones "zones_interdites.pkl" \
-  --output-folder "resultats_modele_final" \
-  --csv-path "resultats_modele_final.csv"
+python analyse_modele_final.py --input-folder "../DATA"
+
+Sous-dossiers selectionnes:
+
+python analyse_modele_final.py --input-folder "../DATA" --include-subfolders "2026-03-03" "2026-03-04"
+
+## 3) Interface graphique (option 1)
+
+Lancer:
+
+run_pipeline_complet.bat
+
+L'interface permet de:
+- choisir les sous-dossiers DATA
+- lancer l'analyse
+- regenerer le monitoring HTML
+
+## 4) Batch Training (nouvelle methode)
+
+Pipeline d'entrainement recommande:
+
+1. Augmentation hors-ligne (optionnel):
+
+python offline_augment_dataset.py --images-dir "../DATA/DATA_1" --labels-dir "../DATA/LABELS_1" --output-images-dir "../DATA/DATA_1_AUG" --output-labels-dir "../DATA/LABELS_1_AUG" --variations 10
+
+2. Preparation train/val/test au format YOLO:
+
+python prepare_yolo_dataset.py --images-dir "../DATA/DATA_1" --labels-dir "../DATA/LABELS_1" --output-dir "batch_dataset" --train-ratio 0.8 --val-ratio 0.1 --test-ratio 0.1 --class-names "car"
+
+3. Entrainement transfer learning:
+
+python train_batch_yolo.py --data "batch_dataset/dataset.yaml" --weights "yolov8n.pt" --epochs 100 --imgsz 640 --batch 16
+
+Rapport de fin d'entrainement genere automatiquement:
+- training_batch_last_report.json
+- training_batch_last_report.html
+
+Indices suivis dans le rapport:
+- precision train
+- precision val
+- recall train
+- recall val
+- mAP50 train
+- mAP50 val
+- mAP50-95 train
+- mAP50-95 val
+- train/val box_loss, cls_loss, dfl_loss
+
+4. Validation batch sur images inconnues:
+
+python validate_batch_model.py --model "training_runs/batch_yolo/weights/best.pt" --images-dir "../DATA_UNKNOWN" --output-dir "validation_outputs"
+
+Lancement rapide entrainement:
+
+run_batch_training.bat
+
+Grille automatique en 3 essais (recommandee pour choisir les hyperparametres):
+
+python run_training_grid_3runs.py --data "batch_dataset/dataset.yaml" --project "training_runs"
+
+Important: la grille utilise strictement le dataset passe via --data (pas de fallback automatique).
+
+Sorties de la grille:
+- training_grid3_summary.csv (classement complet)
+- training_grid3_best.json (meilleur run)
+
+## Monitoring
+
+- Ouvrir monitoring_final_simple.html
+- Rafraichir les donnees:
+
+python mettre_a_jour_monitoring_html.py
 
 ## Sorties
 
-- resultats_modele_final.csv:
-  - free_places
-  - occupied_places
-  - cars_detected
-  - illegal_parked
-  - indicateurs de recalage (matches/inliers)
+- resultats_modele_final.csv: sortie du run courant
+- resultats_modele_final_history.csv: historique cumule
 - resultats_modele_final/*.jpg: images annotees
 
-## Monitoring (interface statistiques)
-
-Version HTML autonome (sans serveur):
-
-- Ouvrir directement le fichier monitoring_officiel.html dans un navigateur.
-- Cette page contient:
-  - un onglet monitoring principal
-  - un onglet monitoring erreurs
-  - les KPI temps reel (base image la plus recente)
-  - legendes visibles sur les graphes
-- Le bouton "Rafraichir la page" lance le script run_modele_et_refresh.bat
-  - nettoyage check manuel
-  - lancement modele final
-  - regeneration du HTML
-  - re-ouverture de la page
-
-Fichier:
-
-monitoring_officiel.html
-
-Important (mode site web HTML):
-
-- En mode navigateur, les scripts locaux (.bat/.py) ne peuvent pas etre executes directement (securite navigateur).
-- Les boutons affichent donc le script a lancer manuellement.
-- Interface 100% HTML conservee (sans serveur, sans HTA obligatoire).
-
-Lancer le serveur local de monitoring officiel (sans input):
-
-python monitoring_server.py
-
-Puis ouvrir:
-
-http://127.0.0.1:8050
-
-Fonctionnalites:
-- KPI temps reel (image la plus recente):
-  - pourcentage de places occupees
-  - nombre de places occupees
-  - nombre de places libres
-  - nombre de voitures en place illegale
-- courbe d'occupation
-- evolution des places occupees/libres
-- stats du check manuel (err1..err10) + ecarts avec la sortie modele
-
-Boutons integres (page principale):
-- Page Monitoring Erreurs
-- Lancer Correction Manuelle
-- Lancer Modele + Rafraichir
-- Rafraichir Maintenant
-
-Page erreurs:
-- URL: http://127.0.0.1:8050/errors
-- totaux des erreurs manuelles
-- detail par image
-- bouton pour lancer la correction manuelle
-
-Notes monitoring:
-- aucun champ de saisie
-- lecture automatique de resultats_modele_final.csv et check_manuel_results.csv
+Colonnes CSV principales:
+- total_cars
+- cars_in_forbidden
+- cars_legal
+- alignment_source
+- uncertain_frame
 
 ## Notes
 
-- Le recalage utilise ORB + RANSAC.
-- Si le recalage echoue sur une image, le script retombe sur les polygones de reference.
-- Le critere illegal est base sur:
-  - overlap avec zone interdite
-  - overlap trop faible avec toute place officielle dans la zone parking
+- Le nettoyage des images de sortie est cible: un rerun d'un sous-dossier supprime
+  uniquement les anciennes sorties de ce sous-dossier.
+- La zone interdite est tracee en rouge sur les images.
+- La zone de travail (parking) est tracee en bleu sur les images.

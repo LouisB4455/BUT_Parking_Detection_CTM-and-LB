@@ -3,182 +3,188 @@ import csv
 import glob
 import os
 import pickle
-from dataclasses import dataclass
-from typing import List, Tuple
+import re
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
 from ultralytics import YOLO
 
-from nettoyer_check_manuel import clean_manual_csv
-
-
 Polygon = List[Tuple[int, int]]
 
 
-@dataclass
-class TunedParams:
-    conf: float
-    occupancy_threshold: float
-    illegal_slot_overlap_threshold: float
-    forbidden_overlap_threshold: float
-    min_matches: int
-    min_inliers: int
-    min_inlier_ratio: float
+def _normalized_label(value: object) -> str:
+    return str(value).strip().lower().replace("-", " ").replace("_", " ")
 
 
-def _safe_int(value: str, default: int = 0) -> int:
-    try:
-        return int(value)
-    except Exception:
-        return default
+def resolve_car_class_id(model: YOLO, default: int = 2) -> int:
+    names_obj = getattr(model, "names", {})
+
+    if isinstance(names_obj, list):
+        names = {i: name for i, name in enumerate(names_obj)}
+    elif isinstance(names_obj, dict):
+        names = {int(k): v for k, v in names_obj.items()}
+    else:
+        names = {}
+
+    for class_id, label in names.items():
+        if _normalized_label(label) == "car":
+            return int(class_id)
+
+    for class_id, label in names.items():
+        if "car" in _normalized_label(label):
+            return int(class_id)
+
+    if len(names) == 1:
+        return int(next(iter(names.keys())))
+
+    if default in names:
+        return int(default)
+
+    return int(min(names.keys())) if names else int(default)
 
 
-def tune_params_from_manual_check(args: argparse.Namespace) -> TunedParams:
-    tuned = TunedParams(
-        conf=args.conf,
-        occupancy_threshold=args.occupancy_threshold,
-        illegal_slot_overlap_threshold=args.illegal_slot_overlap_threshold,
-        forbidden_overlap_threshold=args.forbidden_overlap_threshold,
-        min_matches=args.min_matches,
-        min_inliers=args.min_inliers,
-        min_inlier_ratio=args.min_inlier_ratio,
-    )
-
-    check_csv = args.manual_check_csv
-    if not check_csv or not os.path.exists(check_csv):
-        return tuned
-
-    try:
-        clean_manual_csv(check_csv)
-    except Exception as e:
-        print(f"Nettoyage auto check manuel ignore ({e})")
-
-    by_image = {}
-    with open(check_csv, mode="r", newline="", encoding="utf-8") as f:
-        dict_reader = csv.DictReader(f)
-        has_err10_col = dict_reader.fieldnames is not None and "err10" in dict_reader.fieldnames
-
-        if has_err10_col:
-            for row in dict_reader:
-                img = row.get("image", "").strip()
-                if not img:
-                    continue
-                # Keep latest annotation when an image appears multiple times.
-                by_image[img] = {
-                    "err1": _safe_int(row.get("err1", "0"), 0),
-                    "err2": _safe_int(row.get("err2", "0"), 0),
-                    "err10": _safe_int(row.get("err10", "0"), 0),
-                }
-        else:
-            f.seek(0)
-            raw_reader = csv.reader(f)
-            next(raw_reader, None)  # header
-            for row in raw_reader:
-                # Legacy schema: image, err1..err9, err10?, places_detectees, coords
-                if not row:
-                    continue
-                img = row[0].strip()
-                if not img:
-                    continue
-                err1 = _safe_int(row[1], 0) if len(row) > 1 else 0
-                err2 = _safe_int(row[2], 0) if len(row) > 2 else 0
-                err10 = _safe_int(row[10], 0) if len(row) > 10 else 0
-                by_image[img] = {
-                    "err1": err1,
-                    "err2": err2,
-                    "err10": err10,
-                }
-
-    if not by_image:
-        return tuned
-
-    n = len(by_image)
-    err1_total = 0
-    err2_total = 0
-    err10_total = 0
-
-    for row in by_image.values():
-        err1_total += int(row["err1"])
-        err2_total += int(row["err2"])
-        err10_total += int(row["err10"])
-
-    err1_avg = err1_total / max(n, 1)
-    err2_avg = err2_total / max(n, 1)
-    err10_avg = err10_total / max(n, 1)
-
-    if err1_avg >= 1.0:
-        tuned.conf = max(0.10, tuned.conf - 0.10)
-        tuned.occupancy_threshold = max(0.12, tuned.occupancy_threshold - 0.08)
-
-    if err1_avg >= 2.0:
-        tuned.conf = max(0.08, tuned.conf - 0.05)
-        tuned.occupancy_threshold = max(0.10, tuned.occupancy_threshold - 0.03)
-
-    if err2_avg >= 0.5:
-        tuned.conf = min(0.70, tuned.conf + 0.05)
-
-    if err10_avg >= 0.5:
-        tuned.min_matches = max(tuned.min_matches, 40)
-        tuned.min_inliers = max(tuned.min_inliers, 18)
-        tuned.min_inlier_ratio = max(tuned.min_inlier_ratio, 0.55)
-
-    if err10_avg >= 1.0:
-        tuned.min_matches = max(tuned.min_matches, 50)
-        tuned.min_inliers = max(tuned.min_inliers, 22)
-        tuned.min_inlier_ratio = max(tuned.min_inlier_ratio, 0.62)
-
-    print("\nCalibration depuis check manuel:")
-    print(f"- images annotees: {n}")
-    print(f"- moyenne err1 (voitures non detectees): {err1_avg:.2f}")
-    print(f"- moyenne err2 (fausses detections): {err2_avg:.2f}")
-    print(f"- moyenne err10 (erreur cadrage place): {err10_avg:.2f}")
-    print(
-        f"- params utilises: conf={tuned.conf:.2f}, occupancy={tuned.occupancy_threshold:.2f}, "
-        f"min_matches={tuned.min_matches}, min_inliers={tuned.min_inliers}, min_inlier_ratio={tuned.min_inlier_ratio:.2f}"
-    )
-
-    return tuned
+def extract_year_hint(path_value: Optional[str]) -> Optional[int]:
+    if not isinstance(path_value, str) or not path_value:
+        return None
+    match = re.search(r"(19|20)\d{2}", path_value)
+    if not match:
+        return None
+    return int(match.group(0))
 
 
-def load_parking_slots(path: str) -> List[Polygon]:
-    with open(path, "rb") as f:
-        data = pickle.load(f)
+def normalize_polygon(raw: Any) -> Optional[Polygon]:
+    if not isinstance(raw, list):
+        return None
+    out: Polygon = []
+    for pt in raw:
+        if isinstance(pt, (list, tuple)) and len(pt) >= 2:
+            out.append((int(pt[0]), int(pt[1])))
+    return out if len(out) >= 3 else None
 
-    if isinstance(data, list):
-        return data
 
-    raise ValueError(f"Format de parking_slots non supporte: {type(data)}")
+def normalize_polygons(raw: Any) -> List[Polygon]:
+    if not isinstance(raw, list):
+        return []
+    out: List[Polygon] = []
+    for poly in raw:
+        p = normalize_polygon(poly)
+        if p:
+            out.append(p)
+    return out
 
 
-def load_forbidden_zones(path: str) -> List[Polygon]:
-    if not os.path.exists(path):
+def select_profile_for_frame(frame_path: str, profiles: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if not profiles:
+        return None
+    if len(profiles) == 1:
+        return profiles[0]
+
+    year = extract_year_hint(frame_path)
+    if year is None:
+        return profiles[0]
+
+    exact = [p for p in profiles if p.get("year_hint") == year]
+    if exact:
+        return exact[0]
+
+    # Allow a truly generic profile only when no exact year exists.
+    generic = [p for p in profiles if p.get("year_hint") is None]
+    if generic:
+        return generic[0]
+
+    # Important safety: do not fall back to another year (e.g., 2024 on 2026 images).
+    return None
+
+
+def load_forbidden_zone_profiles(path: str) -> List[Dict[str, Any]]:
+    if not path or not os.path.exists(path):
         return []
 
     with open(path, "rb") as f:
         data = pickle.load(f)
 
     if isinstance(data, list):
-        return data
+        zones = normalize_polygons(data)
+        return [{"name": "default", "zones": zones, "reference_image": None, "year_hint": None}]
 
-    if isinstance(data, dict):
-        if "zones" in data and isinstance(data["zones"], list):
-            return data["zones"]
+    if isinstance(data, dict) and "zones" in data:
+        zones = normalize_polygons(data.get("zones"))
+        ref = data.get("reference_image") if isinstance(data.get("reference_image"), str) else None
+        return [{
+            "name": "default",
+            "zones": zones,
+            "reference_image": ref,
+            "year_hint": extract_year_hint(ref),
+        }]
 
-    raise ValueError(f"Format de zones interdites non supporte: {type(data)}")
+    if isinstance(data, dict) and "profiles" in data and isinstance(data["profiles"], list):
+        profiles = []
+        active = data.get("active_profile") if isinstance(data.get("active_profile"), str) else None
+        for i, p in enumerate(data["profiles"]):
+            if not isinstance(p, dict):
+                continue
+            name = p.get("name") if isinstance(p.get("name"), str) else f"profile_{i+1}"
+            zones = normalize_polygons(p.get("zones"))
+            ref = p.get("reference_image") if isinstance(p.get("reference_image"), str) else None
+            profiles.append({
+                "name": name,
+                "zones": zones,
+                "reference_image": ref,
+                "year_hint": extract_year_hint(ref) or extract_year_hint(name),
+                "is_active": active == name,
+            })
+        profiles.sort(key=lambda x: (0 if x.get("is_active") else 1, str(x.get("name", ""))))
+        return profiles
+
+    raise ValueError(f"Unsupported forbidden zones format: {type(data)}")
 
 
-def load_optional_zone_polygon(path: str) -> Polygon | None:
+def load_work_zone_profiles(path: str) -> List[Dict[str, Any]]:
     if not path or not os.path.exists(path):
-        return None
+        return []
 
     with open(path, "rb") as f:
         data = pickle.load(f)
 
-    if isinstance(data, dict) and "zone" in data:
-        return data["zone"]
+    if isinstance(data, list):
+        zone = normalize_polygon(data)
+        return [{"name": "default", "zone": zone, "reference_image": None, "year_hint": None}] if zone else []
 
-    return None
+    if isinstance(data, dict) and "zone" in data:
+        zone = normalize_polygon(data.get("zone"))
+        ref = data.get("reference_image") if isinstance(data.get("reference_image"), str) else None
+        return [{
+            "name": "default",
+            "zone": zone,
+            "reference_image": ref,
+            "year_hint": extract_year_hint(ref),
+        }] if zone else []
+
+    if isinstance(data, dict) and "profiles" in data and isinstance(data["profiles"], list):
+        profiles = []
+        active = data.get("active_profile") if isinstance(data.get("active_profile"), str) else None
+        for i, p in enumerate(data["profiles"]):
+            if not isinstance(p, dict):
+                continue
+            name = p.get("name") if isinstance(p.get("name"), str) else f"profile_{i+1}"
+            zone = normalize_polygon(p.get("zone"))
+            if not zone:
+                print(f"Warning: work-zone profile '{name}' ignored (missing/invalid polygon)")
+                continue
+            ref = p.get("reference_image") if isinstance(p.get("reference_image"), str) else None
+            profiles.append({
+                "name": name,
+                "zone": zone,
+                "reference_image": ref,
+                "year_hint": extract_year_hint(ref) or extract_year_hint(name),
+                "is_active": active == name,
+            })
+        profiles.sort(key=lambda x: (0 if x.get("is_active") else 1, str(x.get("name", ""))))
+        return profiles
+
+    raise ValueError(f"Unsupported work zone format: {type(data)}")
 
 
 def to_np_poly(poly: Polygon, dtype=np.int32) -> np.ndarray:
@@ -190,457 +196,301 @@ def poly_area(poly: np.ndarray) -> float:
 
 
 def intersection_area(poly_a: np.ndarray, poly_b: np.ndarray) -> float:
-    area, _ = cv2.intersectConvexConvex(
-        poly_a.astype(np.float32), poly_b.astype(np.float32)
-    )
+    area, _ = cv2.intersectConvexConvex(poly_a.astype(np.float32), poly_b.astype(np.float32))
     return float(area)
 
 
-def preprocess_for_orb(gray: np.ndarray, use_clahe: bool, use_normalize: bool) -> np.ndarray:
-    processed = gray
-    if use_clahe:
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-        processed = clahe.apply(processed)
-    if use_normalize:
-        processed = cv2.normalize(processed, None, 0, 255, cv2.NORM_MINMAX)
-    return processed
+def collect_images(folder: str, include_subfolders: Optional[List[str]] = None) -> List[str]:
+    image_files: List[str] = []
+    selected = [s.strip() for s in (include_subfolders or []) if s.strip()]
 
+    if selected:
+        for sub in selected:
+            sub_path = os.path.join(folder, sub)
+            if not os.path.isdir(sub_path):
+                print(f"Subfolder not found: {sub_path}")
+                continue
+            for ext in ("*.jpg", "*.jpeg", "*.png"):
+                image_files.extend(glob.glob(os.path.join(sub_path, "**", ext), recursive=True))
+    else:
+        for ext in ("*.jpg", "*.jpeg", "*.png"):
+            image_files.extend(glob.glob(os.path.join(folder, "**", ext), recursive=True))
 
-def build_orb_mask(shape: tuple[int, int], ignore_top_px: int) -> np.ndarray | None:
-    if ignore_top_px <= 0:
-        return None
-
-    h, w = shape
-    top = min(ignore_top_px, h)
-    if top >= h:
-        return None
-
-    mask = np.zeros((h, w), dtype=np.uint8)
-    mask[top:, :] = 255
-    return mask
-
-
-def is_homography_reasonable(
-    h: np.ndarray | None,
-    max_translation: float,
-    min_scale: float,
-    max_scale: float,
-    max_perspective: float,
-) -> bool:
-    if h is None:
-        return False
-
-    if abs(float(h[2, 2])) < 1e-9:
-        return False
-
-    hn = h / h[2, 2]
-
-    tx = abs(float(hn[0, 2]))
-    ty = abs(float(hn[1, 2]))
-
-    scale_x = float(np.linalg.norm(hn[0:2, 0]))
-    scale_y = float(np.linalg.norm(hn[0:2, 1]))
-
-    persp_x = abs(float(hn[2, 0]))
-    persp_y = abs(float(hn[2, 1]))
-
-    if tx > max_translation or ty > max_translation:
-        return False
-    if not (min_scale < scale_x < max_scale and min_scale < scale_y < max_scale):
-        return False
-    if persp_x > max_perspective or persp_y > max_perspective:
-        return False
-
-    return True
-
-
-def compute_homography_or_none(
-    ref_image: np.ndarray,
-    cur_image: np.ndarray,
-    min_matches: int,
-    min_inliers: int,
-    min_inlier_ratio: float,
-    max_translation: float,
-    min_scale: float,
-    max_scale: float,
-    max_perspective: float,
-    orb_ignore_top_px: int,
-    orb_use_clahe: bool,
-    orb_use_normalize: bool,
-) -> Tuple[np.ndarray | None, int, float, int]:
-    ref_gray = cv2.cvtColor(ref_image, cv2.COLOR_BGR2GRAY)
-    cur_gray = cv2.cvtColor(cur_image, cv2.COLOR_BGR2GRAY)
-
-    ref_gray = preprocess_for_orb(ref_gray, use_clahe=orb_use_clahe, use_normalize=orb_use_normalize)
-    cur_gray = preprocess_for_orb(cur_gray, use_clahe=orb_use_clahe, use_normalize=orb_use_normalize)
-
-    orb_mask = build_orb_mask(ref_gray.shape, ignore_top_px=orb_ignore_top_px)
-
-    orb = cv2.ORB_create(3500)
-    kp1, des1 = orb.detectAndCompute(ref_gray, orb_mask)
-    kp2, des2 = orb.detectAndCompute(cur_gray, orb_mask)
-
-    if des1 is None or des2 is None or len(kp1) < 10 or len(kp2) < 10:
-        return None, 0, 0.0, 0
-
-    bf = cv2.BFMatcher(cv2.NORM_HAMMING)
-    knn = bf.knnMatch(des1, des2, k=2)
-
-    good = []
-    for pair in knn:
-        if len(pair) != 2:
-            continue
-        m, n = pair
-        if m.distance < 0.75 * n.distance:
-            good.append(m)
-
-    match_count = len(good)
-    if match_count < min_matches:
-        return None, 0, 0.0, match_count
-
-    src_pts = np.float32([kp1[m.queryIdx].pt for m in good]).reshape(-1, 1, 2)
-    dst_pts = np.float32([kp2[m.trainIdx].pt for m in good]).reshape(-1, 1, 2)
-
-    h, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
-    if h is None or mask is None:
-        return None, 0, 0.0, match_count
-
-    inliers = int(mask.sum())
-    inlier_ratio = inliers / max(match_count, 1)
-
-    if inliers < min_inliers or inlier_ratio < min_inlier_ratio:
-        return None, inliers, inlier_ratio, match_count
-
-    if not is_homography_reasonable(
-        h,
-        max_translation=max_translation,
-        min_scale=min_scale,
-        max_scale=max_scale,
-        max_perspective=max_perspective,
-    ):
-        return None, inliers, inlier_ratio, match_count
-
-    return h, inliers, inlier_ratio, match_count
-
-
-def warp_polygons(polygons: List[Polygon], h: np.ndarray | None) -> List[Polygon]:
-    if h is None:
-        return [poly.copy() for poly in polygons]
-
-    warped = []
-    for poly in polygons:
-        pts = np.array(poly, dtype=np.float32).reshape(-1, 1, 2)
-        dst = cv2.perspectiveTransform(pts, h).reshape(-1, 2)
-        warped.append([(int(x), int(y)) for x, y in dst])
-    return warped
-
-
-def collect_images(folder: str) -> List[str]:
-    image_files = []
-    for ext in ("*.jpg", "*.jpeg", "*.png"):
-        image_files.extend(glob.glob(os.path.join(folder, ext)))
     return sorted(image_files)
+
+
+def to_image_relpath(image_path: str, input_root: str) -> str:
+    abs_image = os.path.abspath(image_path)
+    abs_root = os.path.abspath(input_root)
+    try:
+        relpath = os.path.relpath(abs_image, abs_root)
+    except ValueError:
+        relpath = os.path.basename(abs_image)
+    return relpath.replace("\\", "/")
+
+
+def output_path_for_image(image_path: str, input_root: str, output_folder: str) -> str:
+    relpath = to_image_relpath(image_path, input_root)
+    safe_rel = relpath.replace("/", "__").replace(":", "_")
+    return os.path.join(output_folder, f"ModeleFinal_{safe_rel}")
+
+
+def cleanup_selected_outputs(image_files: List[str], input_root: str, output_folder: str) -> int:
+    removed = 0
+    for img_path in image_files:
+        new_out = output_path_for_image(img_path, input_root, output_folder)
+        if os.path.exists(new_out):
+            os.remove(new_out)
+            removed += 1
+
+        legacy_out = os.path.join(output_folder, f"ModeleFinal_{os.path.basename(img_path)}")
+        if legacy_out != new_out and os.path.exists(legacy_out):
+            os.remove(legacy_out)
+            removed += 1
+
+    return removed
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Modele final v1: recalage camera + detection de stationnement illegal"
+        description="Modele Final simplifie - uniquement zones rouge (interdite) et bleue (parking)"
     )
-    parser.add_argument("--input-folder", default="../Model 1/image_de_depart_pour_analyse")
-    parser.add_argument("--parking-slots", default="../Model 1/parking_slots.pkl")
-    parser.add_argument("--parking-zone", default="../Model 3/detection_zone_2.pkl")
+    parser.add_argument("--input-folder", default="../DATA")
+    parser.add_argument("--include-subfolders", nargs="*", default=None)
     parser.add_argument("--forbidden-zones", default="zones_interdites.pkl")
+    parser.add_argument("--work-zone", default="parking_zone.pkl")
+
     parser.add_argument("--model-path", default="yolov8m.pt")
-    parser.add_argument("--reference-image", default="")
+    parser.add_argument("--conf", type=float, default=0.5)
+    parser.add_argument("--forbidden-overlap-threshold", type=float, default=0.25)
+    parser.add_argument("--forbidden-min-overlap-pixels", type=float, default=40.0)
     parser.add_argument("--output-folder", default="resultats_modele_final")
     parser.add_argument("--csv-path", default="resultats_modele_final.csv")
-    parser.add_argument("--manual-check-csv", default="check_manuel_results.csv")
-
-    parser.add_argument("--conf", type=float, default=0.22)
-    parser.add_argument("--occupancy-threshold", type=float, default=0.22)
-    # Lower sensitivity for illegal flagging: require stronger evidence.
-    parser.add_argument("--illegal-slot-overlap-threshold", type=float, default=0.05)
-    parser.add_argument("--forbidden-overlap-threshold", type=float, default=0.25)
-
-    parser.add_argument("--min-matches", type=int, default=25)
-    parser.add_argument("--min-inliers", type=int, default=12)
-    parser.add_argument("--min-inlier-ratio", type=float, default=0.35)
-    parser.add_argument("--max-translation", type=float, default=50.0)
-    parser.add_argument("--min-scale", type=float, default=0.8)
-    parser.add_argument("--max-scale", type=float, default=1.2)
-    parser.add_argument("--max-perspective", type=float, default=0.002)
-    parser.add_argument("--orb-ignore-top-px", type=int, default=100)
-    parser.add_argument("--orb-no-clahe", action="store_true")
-    parser.add_argument("--orb-no-normalize", action="store_true")
-    parser.add_argument("--keep-last-good-h", action="store_true")
-    parser.add_argument("--temporal-smooth-alpha", type=float, default=0.2)
-    parser.add_argument("--disable-alignment", action="store_true")
+    parser.add_argument("--history-csv", default="resultats_modele_final_history.csv")
+    parser.add_argument("--cleanup", action="store_true")
 
     return parser.parse_args()
 
 
-def main() -> None:
+def main():
     args = parse_args()
-    tuned = tune_params_from_manual_check(args)
+
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+
+    def _resolve_path(path_value: str) -> str:
+        if os.path.isabs(path_value):
+            return path_value
+        return os.path.normpath(os.path.join(script_dir, path_value))
+
+    args.input_folder = _resolve_path(args.input_folder)
+    args.forbidden_zones = _resolve_path(args.forbidden_zones)
+    args.work_zone = _resolve_path(args.work_zone)
+    args.model_path = _resolve_path(args.model_path)
+
+    args.output_folder = _resolve_path(args.output_folder)
+    args.csv_path = _resolve_path(args.csv_path)
+    args.history_csv = _resolve_path(args.history_csv)
 
     os.makedirs(args.output_folder, exist_ok=True)
 
-    image_files = collect_images(args.input_folder)
-    if not image_files:
-        print(f"Aucune image trouvee dans {args.input_folder}")
-        return
-
-    parking_slots_ref = load_parking_slots(args.parking_slots)
-    forbidden_ref = load_forbidden_zones(args.forbidden_zones)
-    zone_ref = load_optional_zone_polygon(args.parking_zone)
-
+    print(f"Loading YOLO model: {args.model_path}")
     model = YOLO(args.model_path)
+    car_class_id = resolve_car_class_id(model)
+    print(f"Using car class id: {car_class_id}")
 
-    if args.reference_image:
-        reference_path = args.reference_image
-    else:
-        reference_path = image_files[0]
+    forbidden_profiles = load_forbidden_zone_profiles(args.forbidden_zones)
+    print(f"Loaded {len(forbidden_profiles)} forbidden profile(s)")
 
-    reference_image = cv2.imread(reference_path)
-    if reference_image is None:
-        print(f"Image de reference introuvable: {reference_path}")
+    work_profiles = load_work_zone_profiles(args.work_zone)
+    print(f"Loaded {len(work_profiles)} work profile(s)")
+
+    image_files = collect_images(args.input_folder, args.include_subfolders)
+    print(f"Found {len(image_files)} image(s)")
+    if not image_files:
+        print("No images found. Exiting.")
         return
+
+    if args.cleanup:
+        removed = cleanup_selected_outputs(image_files, args.input_folder, args.output_folder)
+        print(f"Removed {removed} old output image(s)")
 
     with open(args.csv_path, mode="w", newline="", encoding="utf-8") as f_csv:
         writer = csv.writer(f_csv)
-        writer.writerow(
-            [
-                "image",
-                "free_places",
-                "occupied_places",
-                "total_places",
-                "cars_detected",
-                "illegal_parked",
-                "alignment_ok",
-                "match_count",
-                "inliers",
-                "inlier_ratio",
-            ]
-        )
+        writer.writerow([
+            "timestamp",
+            "image",
+            "total_cars",
+            "cars_in_forbidden",
+            "cars_legal",
+            "line_delta_dx",
+            "line_delta_dy",
+            "alignment_source",
+            "alignment_confidence",
+            "uncertain",
+        ])
 
-        last_good_h = None
-        temporal_alpha = float(np.clip(args.temporal_smooth_alpha, 0.0, 1.0))
-        orb_use_clahe = not args.orb_no_clahe
-        orb_use_normalize = not args.orb_no_normalize
+        history_rows = []
+        last_forbidden_profile = None
+        last_work_profile = None
 
-        for img_path in image_files:
+        for frame_idx, img_path in enumerate(image_files):
+            print(f"[{frame_idx + 1}/{len(image_files)}] Processing: {img_path}")
+
             frame = cv2.imread(img_path)
             if frame is None:
-                print(f"Lecture impossible: {img_path}")
+                print("  ERROR: Could not read image")
                 continue
 
-            if args.disable_alignment:
-                h = None
-                alignment_ok = 0
-                inliers = 0
-                inlier_ratio = 0.0
-                match_count = 0
-            else:
-                h, inliers, inlier_ratio, match_count = compute_homography_or_none(
-                    reference_image,
-                    frame,
-                    min_matches=tuned.min_matches,
-                    min_inliers=tuned.min_inliers,
-                    min_inlier_ratio=tuned.min_inlier_ratio,
-                    max_translation=args.max_translation,
-                    min_scale=args.min_scale,
-                    max_scale=args.max_scale,
-                    max_perspective=args.max_perspective,
-                    orb_ignore_top_px=args.orb_ignore_top_px,
-                    orb_use_clahe=orb_use_clahe,
-                    orb_use_normalize=orb_use_normalize,
-                )
+            forbidden_profile = select_profile_for_frame(img_path, forbidden_profiles)
+            work_profile = select_profile_for_frame(img_path, work_profiles)
 
-                if h is not None and last_good_h is not None and temporal_alpha > 0.0:
-                    h = (1.0 - temporal_alpha) * last_good_h + temporal_alpha * h
+            forbidden_zones = forbidden_profile.get("zones", []) if forbidden_profile else []
+            work_zone = work_profile.get("zone") if work_profile else None
 
-                if h is not None:
-                    last_good_h = h.copy()
-                elif args.keep_last_good_h and last_good_h is not None:
-                    h = last_good_h.copy()
+            fp_name = forbidden_profile.get("name") if forbidden_profile else "none"
+            wp_name = work_profile.get("name") if work_profile else "none"
+            if fp_name != last_forbidden_profile:
+                print(f"  Forbidden profile: {fp_name}")
+                last_forbidden_profile = fp_name
+            if wp_name != last_work_profile:
+                print(f"  Work profile: {wp_name}")
+                last_work_profile = wp_name
 
-                alignment_ok = int(h is not None)
-
-            parking_slots_cur = warp_polygons(parking_slots_ref, h)
-            forbidden_cur = warp_polygons(forbidden_ref, h)
-            zone_cur = warp_polygons([zone_ref], h)[0] if zone_ref is not None else None
-
-            # YOLO: classe 2 = voiture dans COCO
-            results = model(frame, conf=tuned.conf, verbose=False)
+            results = model(frame, conf=args.conf, verbose=False)
 
             cars = []
+            det_confidences: List[float] = []
             for r in results:
                 boxes = r.boxes.xyxy.cpu().numpy()
                 classes = r.boxes.cls.cpu().numpy()
-                for box, cls in zip(boxes, classes):
-                    if int(cls) != 2:
+                confs = r.boxes.conf.cpu().numpy() if getattr(r.boxes, "conf", None) is not None else np.ones(len(boxes), dtype=float)
+                for box, cls, det_conf in zip(boxes, classes, confs):
+                    if int(cls) != car_class_id:
                         continue
                     x1, y1, x2, y2 = box.astype(int)
-                    det_poly = np.array(
-                        [[x1, y1], [x2, y1], [x2, y2], [x1, y2]],
-                        dtype=np.int32,
-                    )
-                    cars.append(
-                        {
-                            "bbox": (x1, y1, x2, y2),
-                            "poly": det_poly,
-                            "center": ((x1 + x2) // 2, (y1 + y2) // 2),
-                            "area": max(1.0, poly_area(det_poly)),
-                        }
-                    )
+                    cx = (x1 + x2) // 2
+                    cy = (y1 + y2) // 2
+                    det_poly = np.array([[x1, y1], [x2, y1], [x2, y2], [x1, y2]], dtype=np.int32)
+                    cars.append({
+                        "bbox": (x1, y1, x2, y2),
+                        "poly": det_poly,
+                        "center": (cx, cy),
+                        "area": max(1.0, poly_area(det_poly)),
+                    })
+                    det_confidences.append(float(det_conf))
 
-            # Occupation place par place
-            free_places = 0
-            occupied_places = 0
-            slot_np = [to_np_poly(poly, dtype=np.int32) for poly in parking_slots_cur]
+            total_cars = len(cars)
+            forbidden_np = [to_np_poly(poly, dtype=np.int32) for poly in forbidden_zones]
 
-            for poly in slot_np:
-                slot_area = max(1.0, poly_area(poly))
-                is_occupied = False
-
-                for car in cars:
-                    ratio = intersection_area(poly, car["poly"]) / slot_area
-                    if ratio > tuned.occupancy_threshold:
-                        is_occupied = True
-                        break
-
-                if is_occupied:
-                    occupied_places += 1
-                    color = (0, 0, 255)
-                else:
-                    free_places += 1
-                    color = (0, 255, 0)
-
-                cv2.polylines(frame, [poly], True, color, 2)
-
-            # Stationnement illegal
-            forbidden_np = [to_np_poly(poly, dtype=np.int32) for poly in forbidden_cur]
-            zone_np = to_np_poly(zone_cur, dtype=np.int32) if zone_cur is not None else None
-
-            illegal_count = 0
+            cars_in_forbidden = 0
             for car in cars:
                 det_poly = car["poly"]
                 det_area = car["area"]
-                cx, cy = car["center"]
-
-                max_slot_overlap = 0.0
-                for slot in slot_np:
-                    max_slot_overlap = max(
-                        max_slot_overlap,
-                        intersection_area(det_poly, slot) / det_area,
-                    )
-
                 max_forbidden_overlap = 0.0
+                max_forbidden_overlap_px = 0.0
                 for fpoly in forbidden_np:
+                    overlap_area = intersection_area(det_poly, fpoly)
+                    max_forbidden_overlap_px = max(max_forbidden_overlap_px, overlap_area)
                     max_forbidden_overlap = max(
                         max_forbidden_overlap,
-                        intersection_area(det_poly, fpoly) / det_area,
+                        overlap_area / det_area,
                     )
-
-                in_zone = True
-                if zone_np is not None:
-                    in_zone = cv2.pointPolygonTest(zone_np, (float(cx), float(cy)), False) >= 0
-
-                center_in_any_slot = False
-                for slot in slot_np:
-                    if cv2.pointPolygonTest(slot.astype(np.float32), (float(cx), float(cy)), False) >= 0:
-                        center_in_any_slot = True
-                        break
-
-                is_illegal = False
-                if max_forbidden_overlap >= tuned.forbidden_overlap_threshold:
-                    is_illegal = True
-                elif in_zone and (not center_in_any_slot) and max_slot_overlap < tuned.illegal_slot_overlap_threshold:
-                    is_illegal = True
-
-                x1, y1, x2, y2 = car["bbox"]
-                if is_illegal:
-                    illegal_count += 1
-                    color = (0, 0, 255)
-                    tag = "ILLEGAL"
+                if (
+                    max_forbidden_overlap >= args.forbidden_overlap_threshold
+                    and max_forbidden_overlap_px >= args.forbidden_min_overlap_pixels
+                ):
+                    cars_in_forbidden += 1
+                    car["forbidden"] = True
                 else:
-                    color = (255, 255, 0)
-                    tag = "LEGAL"
+                    car["forbidden"] = False
 
-                cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-                cv2.circle(frame, (cx, cy), 4, color, -1)
+            cars_legal = total_cars - cars_in_forbidden
+            uncertain = 1 if total_cars == 0 else 0
+            frame_confidence = float(np.mean(det_confidences)) if det_confidences else 0.0
+
+            output_frame = frame.copy()
+
+            for car in cars:
+                x1, y1, x2, y2 = car["bbox"]
+                cx, cy = car["center"]
+                if car.get("forbidden", False):
+                    color = (0, 0, 255)
+                    label = "FORBIDDEN"
+                else:
+                    color = (0, 255, 255)
+                    label = "CAR"
+
+                cv2.rectangle(output_frame, (x1, y1), (x2, y2), color, 2)
+                cv2.circle(output_frame, (cx, cy), 3, color, -1)
                 cv2.putText(
-                    frame,
-                    tag,
+                    output_frame,
+                    label,
                     (x1, max(20, y1 - 7)),
                     cv2.FONT_HERSHEY_SIMPLEX,
-                    0.55,
+                    0.5,
                     color,
                     2,
                 )
 
             for fpoly in forbidden_np:
-                cv2.polylines(frame, [fpoly], True, (0, 0, 255), 2)
+                cv2.polylines(output_frame, [fpoly], True, (0, 0, 255), 2)
 
-            if zone_np is not None:
-                cv2.polylines(frame, [zone_np], True, (255, 0, 0), 2)
+            if work_zone:
+                wz_np = to_np_poly(work_zone, dtype=np.int32)
+                cv2.polylines(output_frame, [wz_np], True, (255, 0, 0), 2)
 
-            # Cartouche resume
-            cv2.rectangle(frame, (15, 15), (880, 170), (0, 0, 0), -1)
+            cv2.rectangle(output_frame, (15, 15), (820, 70), (0, 0, 0), -1)
             cv2.putText(
-                frame,
-                f"Free: {free_places}/{len(slot_np)}  Occupied: {occupied_places}",
+                output_frame,
+                f"Total: {total_cars}  Forbidden: {cars_in_forbidden}  Legal: {cars_legal}",
                 (30, 50),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.85,
                 (0, 255, 0),
                 2,
             )
-            cv2.putText(
-                frame,
-                f"Cars: {len(cars)}  Illegal: {illegal_count}",
-                (30, 85),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.85,
-                (0, 200, 255),
-                2,
-            )
-            cv2.putText(
-                frame,
-                f"Alignment ok: {alignment_ok}  matches: {match_count}  inliers: {inliers}  ratio: {inlier_ratio:.2f}",
-                (30, 120),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.7,
-                (255, 255, 255),
-                2,
-            )
 
-            file_name = os.path.basename(img_path)
-            output_name = os.path.join(args.output_folder, f"ModeleFinal_{file_name}")
-            cv2.imwrite(output_name, frame)
+            output_name = output_path_for_image(img_path, args.input_folder, args.output_folder)
+            cv2.imwrite(output_name, output_frame)
+            print(f"  Saved: {output_name}")
 
-            writer.writerow(
-                [
-                    file_name,
-                    free_places,
-                    occupied_places,
-                    len(slot_np),
-                    len(cars),
-                    illegal_count,
-                    alignment_ok,
-                    match_count,
-                    inliers,
-                    f"{inlier_ratio:.4f}",
-                ]
-            )
+            rel_image = to_image_relpath(img_path, args.input_folder)
+            row = [
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                rel_image,
+                total_cars,
+                cars_in_forbidden,
+                cars_legal,
+                "0.0",
+                "0.0",
+                "disabled",
+                f"{frame_confidence:.4f}",
+                uncertain,
+            ]
+            writer.writerow(row)
+            history_rows.append(row)
 
-            print(
-                f"OK {file_name} | free={free_places} occupied={occupied_places} illegal={illegal_count} align={alignment_ok}"
-            )
+    history_exists = os.path.exists(args.history_csv)
+    with open(args.history_csv, mode="a", newline="", encoding="utf-8") as f_hist:
+        hist_writer = csv.writer(f_hist)
+        if not history_exists:
+            hist_writer.writerow([
+                "timestamp",
+                "image",
+                "total_cars",
+                "cars_in_forbidden",
+                "cars_legal",
+                "line_delta_dx",
+                "line_delta_dy",
+                "alignment_source",
+                "alignment_confidence",
+                "uncertain",
+            ])
+        for row in history_rows:
+            hist_writer.writerow(row)
 
-    print("\nTermine.")
-    print(f"CSV: {args.csv_path}")
-    print(f"Images: {args.output_folder}")
+    print("=== Processing complete ===")
+    print("Done!")
 
 
 if __name__ == "__main__":

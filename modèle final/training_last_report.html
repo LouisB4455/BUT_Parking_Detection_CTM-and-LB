@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Training Report</title>
+    <style>
+        :root { --bg:#f3f7fb; --card:#ffffff; --ink:#0f172a; --muted:#64748b; --line:#e2e8f0; --ok:#2e7d32; --bad:#c62828; --skip:#1565c0; --fail:#7b1fa2; }
+        * { box-sizing: border-box; }
+        body { margin:0; font-family:Segoe UI, Arial, sans-serif; background: radial-gradient(circle at top right, #e9f2ff 0%, var(--bg) 45%); color:var(--ink); }
+        .wrap { max-width:1280px; margin:0 auto; padding:24px; }
+        .card { background:var(--card); border-radius:14px; padding:18px; margin-bottom:14px; border:1px solid #dbe3ef; box-shadow:0 8px 24px rgba(15,23,42,.05); }
+        .head { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+        .title { margin:0; font-size:28px; }
+        .subtitle { margin:6px 0 0; color:var(--muted); }
+        .status { display:inline-block; padding:8px 12px; border-radius:999px; color:#fff; font-weight:700; background:#c62828; text-transform:uppercase; letter-spacing:.5px; }
+        .kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px; }
+        .kpi { border:1px solid var(--line); border-radius:10px; padding:10px; background:#f8fbff; }
+        .kpi .k { color:var(--muted); font-size:12px; text-transform:uppercase; }
+        .kpi .v { font-size:22px; font-weight:700; margin-top:3px; }
+        .trend { font-size:28px; font-weight:800; line-height:1; }
+        .gauge { margin-top:8px; background:#e2e8f0; border-radius:999px; height:14px; overflow:hidden; }
+        .gauge-fill { height:100%; width:51.3%; background:#c62828; transition:width .4s ease; }
+        .actions { margin:0; padding-left:20px; color:#334155; }
+        .actions li { margin:6px 0; }
+        .charts { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+        .chart-card { border:1px solid var(--line); border-radius:10px; padding:10px; background:#fbfdff; }
+        .chart-title { font-size:14px; margin:0 0 6px; color:#334155; }
+        svg { width:100%; height:210px; display:block; background:#fff; border:1px solid #edf2f7; border-radius:8px; }
+        .legend { display:flex; gap:10px; margin-top:8px; font-size:12px; color:#475569; }
+        .dot { width:10px; height:10px; border-radius:50%; display:inline-block; margin-right:4px; }
+        table { width:100%; border-collapse:collapse; }
+        th, td { border-bottom:1px solid var(--line); padding:8px; text-align:left; font-size:12px; }
+        th { background:#f8fafc; color:#334155; }
+        .pill { display:inline-block; padding:3px 8px; border-radius:999px; font-size:11px; font-weight:700; text-transform:uppercase; }
+        .status-accepted { background:#dcfce7; color:#166534; }
+        .status-rejected { background:#fee2e2; color:#991b1b; }
+        .status-skipped { background:#dbeafe; color:#1d4ed8; }
+        .status-failed { background:#f3e8ff; color:#6b21a8; }
+        @media (max-width: 900px) { .charts { grid-template-columns:1fr; } }
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <div class="card">
+            <div class="head">
+                <div>
+                    <h1 class="title">Compte rendu entrainement YOLO</h1>
+                    <p class="subtitle">Run: 2026-04-05 00:22:45 | Decision reason: regression_guard</p>
+                </div>
+                <div class="status">rejected</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="kpis">
+                <div class="kpi"><div class="k">Train images</div><div class="v">234</div></div>
+                <div class="kpi"><div class="k">Val images</div><div class="v">58</div></div>
+                <div class="kpi"><div class="k">Total boxes</div><div class="v">8820</div></div>
+                <div class="kpi"><div class="k">Baseline MAE</div><div class="v">1.7478</div></div>
+                <div class="kpi"><div class="k">Candidate MAE</div><div class="v">3.3407</div></div>
+                <div class="kpi"><div class="k">Delta MAE (cand-base)</div><div class="v">+1.5929</div></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="kpis">
+                <div class="kpi">
+                    <div class="k">Tendance MAE (historique recent)</div>
+                    <div class="trend" style="color:#2e7d32">↓</div>
+                    <div class="v" style="font-size:16px; color:#2e7d32">amelioration MAE</div>
+                </div>
+                <div class="kpi">
+                    <div class="k">Proximite d'acceptation (MAE)</div>
+                    <div class="v">51.3%</div>
+                    <div class="gauge"><div class="gauge-fill"></div></div>
+                    <div style="margin-top:6px; color:#64748b; font-size:12px;">Cible MAE: 1.7128 | Candidat: 3.3407</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="kpis">
+                <div class="kpi"><div class="k">Accepted (history)</div><div class="v">0</div></div>
+                <div class="kpi"><div class="k">Rejected (history)</div><div class="v">11</div></div>
+                <div class="kpi"><div class="k">Skipped (history)</div><div class="v">4</div></div>
+                <div class="kpi"><div class="k">Failed (history)</div><div class="v">0</div></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="charts">
+                <div class="chart-card">
+                    <h3 class="chart-title">Evolution MAE (baseline vs candidate)</h3>
+                    <svg id="chartMae"></svg>
+                    <div class="legend">
+                        <span><span class="dot" style="background:#2563eb"></span>Baseline MAE</span>
+                        <span><span class="dot" style="background:#dc2626"></span>Candidate MAE</span>
+                    </div>
+                </div>
+                <div class="chart-card">
+                    <h3 class="chart-title">Evolution Mean Count (baseline vs candidate)</h3>
+                    <svg id="chartMean"></svg>
+                    <div class="legend">
+                        <span><span class="dot" style="background:#0f766e"></span>Baseline mean</span>
+                        <span><span class="dot" style="background:#ea580c"></span>Candidate mean</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3 style="margin-top:0">Historique recent des decisions</h3>
+            <table>
+                <thead><tr><th>timestamp</th><th>status</th><th>reason</th><th>baseline_mean</th><th>candidate_mean</th><th>baseline_mae</th><th>candidate_mae</th></tr></thead>
+                <tbody><tr><td>2026-04-03 19:54:06</td><td><span class='pill status-rejected'>rejected</span></td><td>regression_guard</td><td>24.1000</td><td>0.0000</td><td>1.8280</td><td>25.1720</td></tr>
+<tr><td>2026-04-03 20:00:51</td><td><span class='pill status-rejected'>rejected</span></td><td>regression_guard</td><td>23.3000</td><td>0.0000</td><td>1.7600</td><td>25.0400</td></tr>
+<tr><td>2026-04-03 20:18:56</td><td><span class='pill status-rejected'>rejected</span></td><td>regression_guard</td><td>23.0000</td><td>0.0000</td><td>1.7009</td><td>24.5514</td></tr>
+<tr><td>2026-04-03 20:29:04</td><td><span class='pill status-rejected'>rejected</span></td><td>regression_guard</td><td>22.5500</td><td>0.0000</td><td>1.6404</td><td>24.3333</td></tr>
+<tr><td>2026-04-03 21:21:11</td><td><span class='pill status-rejected'>rejected</span></td><td>regression_guard</td><td>21.9000</td><td>0.0000</td><td>1.5868</td><td>24.0331</td></tr>
+<tr><td>2026-04-03 21:42:36</td><td><span class='pill status-rejected'>rejected</span></td><td>regression_guard</td><td>21.9000</td><td>24.2000</td><td>1.5625</td><td>2.8125</td></tr>
+<tr><td>2026-04-03 21:58:27</td><td><span class='pill status-rejected'>rejected</span></td><td>regression_guard</td><td>21.9000</td><td>24.5500</td><td>1.5420</td><td>2.7099</td></tr>
+<tr><td>2026-04-04 16:10:26</td><td><span class='pill status-skipped'>skipped</span></td><td>no_annotations</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>2026-04-04 16:13:30</td><td><span class='pill status-skipped'>skipped</span></td><td>no_annotations</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>2026-04-04 16:16:52</td><td><span class='pill status-skipped'>skipped</span></td><td>no_annotations</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>2026-04-04 16:38:49</td><td><span class='pill status-rejected'>rejected</span></td><td>regression_guard</td><td>21.9000</td><td>24.5500</td><td>1.5420</td><td>2.7099</td></tr>
+<tr><td>2026-04-04 17:18:38</td><td><span class='pill status-skipped'>skipped</span></td><td>insufficient_training_data</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>2026-04-04 17:25:44</td><td><span class='pill status-rejected'>rejected</span></td><td>regression_guard</td><td>26.8462</td><td>0.0000</td><td>1.5379</td><td>23.5862</td></tr>
+<tr><td>2026-04-04 18:48:45</td><td><span class='pill status-rejected'>rejected</span></td><td>regression_guard</td><td>19.5000</td><td>19.6000</td><td>2.8733</td><td>3.5685</td></tr>
+<tr><td>2026-04-05 02:09:32</td><td><span class='pill status-rejected'>rejected</span></td><td>regression_guard</td><td>29.5500</td><td>30.7500</td><td>1.7478</td><td>3.3407</td></tr></tbody>
+            </table>
+        </div>
+
+        <div class="card">
+            <h3 style="margin-top:0">Parametres d'entrainement</h3>
+            <div class="kpis">
+                <div class="kpi"><div class="k">epochs</div><div class="v">15</div></div>
+                <div class="kpi"><div class="k">batch</div><div class="v">4</div></div>
+                <div class="kpi"><div class="k">imgsz</div><div class="v">640</div></div>
+                <div class="kpi"><div class="k">lr0</div><div class="v">0.001</div></div>
+                <div class="kpi"><div class="k">freeze</div><div class="v">10</div></div>
+                <div class="kpi"><div class="k">min_improvement_ratio</div><div class="v">0.98</div></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3 style="margin-top:0">Actions recommandees</h3>
+            <ul class="actions">
+                <li>Prioriser les corrections de faux positifs sur les images les plus surchargees.</li><li>Le candidat reste moins precis: ajouter des corrections cibles plutot que de gros volumes redondants.</li><li>Relancer l'entrainement apres un lot de corrections variees (conditions lumineuses et angles differents).</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        const DATA = {"labels": ["19:54:06", "20:00:51", "20:18:56", "20:29:04", "21:21:11", "21:42:36", "21:58:27", "16:10:26", "16:13:30", "16:16:52", "16:38:49", "17:18:38", "17:25:44", "18:48:45", "02:09:32"], "baselineMAE": [1.828, 1.76, 1.7009, 1.6404, 1.5868, 1.5625, 1.542, null, null, null, 1.542, null, 1.5379, 2.8733, 1.7478], "candidateMAE": [25.172, 25.04, 24.5514, 24.3333, 24.0331, 2.8125, 2.7099, null, null, null, 2.7099, null, 23.5862, 3.5685, 3.3407], "baselineMean": [24.1, 23.3, 23.0, 22.55, 21.9, 21.9, 21.9, null, null, null, 21.9, null, 26.8462, 19.5, 29.55], "candidateMean": [0.0, 0.0, 0.0, 0.0, 0.0, 24.2, 24.55, null, null, null, 24.55, null, 0.0, 19.6, 30.75]};
+
+        function drawLineChart(svgId, labels, s1, s2, color1, color2) {
+            const svg = document.getElementById(svgId);
+            if (!svg) return;
+            const width = svg.clientWidth || 560;
+            const height = svg.clientHeight || 210;
+            const pad = 30;
+            const usableW = width - pad * 2;
+            const usableH = height - pad * 2;
+
+            const merged = [];
+            for (let i = 0; i < Math.max(s1.length, s2.length); i++) {
+                if (typeof s1[i] === 'number') merged.push(s1[i]);
+                if (typeof s2[i] === 'number') merged.push(s2[i]);
+            }
+
+            if (!merged.length) {
+                svg.innerHTML = `<text x="${width/2}" y="${height/2}" text-anchor="middle" fill="#94a3b8">Pas de donnees</text>`;
+                return;
+            }
+
+            const minY = Math.min(...merged);
+            const maxY = Math.max(...merged);
+            const span = Math.max(1e-6, maxY - minY);
+            const toX = (i, n) => pad + (usableW * i / Math.max(1, n - 1));
+            const toY = (v) => height - pad - ((v - minY) / span) * usableH;
+
+            function pathFor(series) {
+                let p = '';
+                let started = false;
+                for (let i = 0; i < series.length; i++) {
+                    const v = series[i];
+                    if (typeof v !== 'number') continue;
+                    const x = toX(i, series.length);
+                    const y = toY(v);
+                    if (!started) { p += `M ${x} ${y}`; started = true; }
+                    else { p += ` L ${x} ${y}`; }
+                }
+                return p;
+            }
+
+            const p1 = pathFor(s1);
+            const p2 = pathFor(s2);
+            svg.innerHTML = `
+                <rect x="0" y="0" width="${width}" height="${height}" fill="#ffffff"/>
+                <line x1="${pad}" y1="${pad}" x2="${pad}" y2="${height-pad}" stroke="#cbd5e1" />
+                <line x1="${pad}" y1="${height-pad}" x2="${width-pad}" y2="${height-pad}" stroke="#cbd5e1" />
+                <path d="${p1}" fill="none" stroke="${color1}" stroke-width="2" />
+                <path d="${p2}" fill="none" stroke="${color2}" stroke-width="2" />
+                <text x="${pad}" y="${pad-8}" fill="#64748b" font-size="11">min=${minY.toFixed(2)} | max=${maxY.toFixed(2)}</text>
+            `;
+        }
+
+        drawLineChart('chartMae', DATA.labels || [], DATA.baselineMAE || [], DATA.candidateMAE || [], '#2563eb', '#dc2626');
+        drawLineChart('chartMean', DATA.labels || [], DATA.baselineMean || [], DATA.candidateMean || [], '#0f766e', '#ea580c');
+    </script>
+</body>
+</html>

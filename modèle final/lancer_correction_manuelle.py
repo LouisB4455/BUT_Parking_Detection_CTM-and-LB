@@ -1,20 +1,22 @@
-import glob
-import os
-import runpy
+import subprocess
+import sys
+from pathlib import Path
 
 
 def main() -> None:
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    module_dir = os.path.normpath(os.path.join(current_dir, "..", "module_d_analyse_des_resultats"))
+    script_dir = Path(__file__).resolve().parent
+    correction_gui = script_dir / "correction_gui.py"
 
-    pattern = os.path.join(module_dir, "*Analyse 1.py")
-    matches = sorted(glob.glob(pattern))
+    print("Lancement de l'outil de correction manuelle GUI...")
+    print(f"Dossier: {script_dir}")
 
-    if not matches:
-        raise FileNotFoundError(f"Script de correction manuelle introuvable via: {pattern}")
+    # Lancer correction_gui.py
+    result = subprocess.run(
+        [sys.executable, str(correction_gui)],
+        cwd=str(script_dir),
+    )
 
-    script_path = matches[0]
-    runpy.run_path(script_path, run_name="__main__")
+    sys.exit(result.returncode)
 
 
 if __name__ == "__main__":

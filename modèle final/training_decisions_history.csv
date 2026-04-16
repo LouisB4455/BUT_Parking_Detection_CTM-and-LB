@@ -1,0 +1,20 @@
+timestamp,status,reason,output_model,train_images,val_images,total_boxes,baseline_mean,candidate_mean,baseline_mae,candidate_mae,n_eval_base,n_eval_candidate,min_improvement_ratio
+2026-04-03 19:26:28,rejected,regression_guard,parking_detector_corrections.pt,7,2,156,16.3333,0.0000,1.6316,25.3026,76,76,0.9800
+2026-04-03 19:32:07,rejected,regression_guard,parking_detector_corrections.pt,7,2,156,16.3333,0.0000,1.6316,25.3026,76,76,0.9800
+2026-04-03 19:38:25,rejected,regression_guard,parking_detector_corrections.pt,7,2,156,16.3333,0.0000,1.6316,25.3026,76,76,0.9800
+2026-04-03 19:46:58,rejected,regression_guard,parking_detector_corrections.pt,13,3,332,20.1250,0.0000,1.8953,25.0930,86,86,0.9800
+2026-04-03 19:54:06,rejected,regression_guard,parking_detector_corrections.pt,18,5,514,24.1000,0.0000,1.8280,25.1720,93,93,0.9800
+2026-04-03 20:00:51,rejected,regression_guard,parking_detector_corrections.pt,24,6,675,23.3000,0.0000,1.7600,25.0400,100,100,0.9800
+2026-04-03 20:18:56,rejected,regression_guard,parking_detector_corrections.pt,28,7,787,23.0000,0.0000,1.7009,24.5514,107,107,0.9800
+2026-04-03 20:29:04,rejected,regression_guard,parking_detector_corrections.pt,34,8,932,22.5500,0.0000,1.6404,24.3333,114,114,0.9800
+2026-04-03 21:21:11,rejected,regression_guard,parking_detector_corrections.pt,39,10,1065,21.9000,0.0000,1.5868,24.0331,121,121,0.9800
+2026-04-03 21:42:36,rejected,regression_guard,parking_detector_corrections.pt,44,11,1146,21.9000,24.2000,1.5625,2.8125,128,128,0.9800
+2026-04-03 21:58:27,rejected,regression_guard,parking_detector_corrections.pt,46,11,1181,21.9000,24.5500,1.5420,2.7099,131,131,0.9800
+2026-04-04 16:10:26,skipped,no_annotations,C:\Users\cdeth\OneDrive - ISEP\Documents\Projet ISEP VUT\BUT_Parking_Detection_CTM-and-LB\modèle final\parking_detector_corrections.pt,0,0,0,,,,,0,0,0.9800
+2026-04-04 16:13:30,skipped,no_annotations,C:\Users\cdeth\OneDrive - ISEP\Documents\Projet ISEP VUT\BUT_Parking_Detection_CTM-and-LB\modèle final\parking_detector_corrections.pt,0,0,0,,,,,0,0,0.9800
+2026-04-04 16:16:52,skipped,no_annotations,C:\Users\cdeth\OneDrive - ISEP\Documents\Projet ISEP VUT\BUT_Parking_Detection_CTM-and-LB\modèle final\parking_detector_corrections.pt,0,0,0,,,,,0,0,0.9800
+2026-04-04 16:38:49,rejected,regression_guard,parking_detector_corrections.pt,46,11,1181,21.9000,24.5500,1.5420,2.7099,131,131,0.9800
+2026-04-04 17:18:38,skipped,insufficient_training_data,parking_detector_corrections.pt,6,1,161,,,,,0,0,0.9800
+2026-04-04 17:25:44,rejected,regression_guard,parking_detector_corrections.pt,10,3,368,26.8462,0.0000,1.5379,23.5862,145,145,0.9800
+2026-04-04 18:48:45,rejected,regression_guard,parking_detector_corrections.pt,107,27,3239,19.5000,19.6000,2.8733,3.5685,292,292,0.9800
+2026-04-05 02:09:32,rejected,regression_guard,parking_detector_corrections.pt,234,58,8820,29.5500,30.7500,1.7478,3.3407,452,452,0.9800

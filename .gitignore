@@ -1,0 +1,18 @@
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Training artifacts
+runs/
+modèle final/training_runs/
+modèle final/batch_dataset/
+
+# Generated YOLO datasets
+modèle final/yolo_correction_dataset/images/
+modèle final/yolo_correction_dataset/labels/
+
+# Raw datasets (kept local)
+DATA/
+
+# Optional logs/reports
+*.tmp

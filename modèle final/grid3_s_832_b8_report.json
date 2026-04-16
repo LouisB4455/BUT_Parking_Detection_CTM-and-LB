@@ -1,0 +1,24 @@
+{
+  "generated_at": "2026-04-15 21:37:15",
+  "mode": "batch_training",
+  "run_dir": "C:\\Users\\cdeth\\OneDrive - ISEP\\Documents\\Projet ISEP VUT\\BUT_Parking_Detection_CTM-and-LB\\modèle final\\runs\\detect\\training_runs\\grid3_s_832_b8",
+  "data_yaml": "C:\\Users\\cdeth\\OneDrive - ISEP\\Documents\\Projet ISEP VUT\\BUT_Parking_Detection_CTM-and-LB\\modèle final\\batch_dataset\\dataset.yaml",
+  "best_weights": "C:\\Users\\cdeth\\OneDrive - ISEP\\Documents\\Projet ISEP VUT\\BUT_Parking_Detection_CTM-and-LB\\modèle final\\runs\\detect\\training_runs\\grid3_s_832_b8\\weights\\best.pt",
+  "metrics": {
+    "epoch": 111,
+    "val_precision": 0.9878509653990242,
+    "val_recall": 0.9382055891993674,
+    "val_map50": 0.9627896190847954,
+    "val_map50_95": 0.8393406250648404,
+    "train_box_loss": 0.4353,
+    "train_cls_loss": 0.2329,
+    "train_dfl_loss": 0.83349,
+    "val_box_loss": 0.66071,
+    "val_cls_loss": 0.26379,
+    "val_dfl_loss": 0.96244,
+    "train_precision": 0.9948819062394915,
+    "train_recall": 0.9562529719448407,
+    "train_map50": 0.9750173300333048,
+    "train_map50_95": 0.9120639283672956
+  }
+}
