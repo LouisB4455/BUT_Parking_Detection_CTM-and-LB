@@ -17,6 +17,7 @@ EXPECTED_FIELDS = {
     "alignment_source",
     "alignment_confidence",
     "uncertain",
+    "processing_seconds",
 }
 
 CURRENT_SCHEMA_FIELDS = [
@@ -30,6 +31,7 @@ CURRENT_SCHEMA_FIELDS = [
     "alignment_source",
     "alignment_confidence",
     "uncertain",
+    "processing_seconds",
 ]
 
 
@@ -75,6 +77,7 @@ def build_result(row):
         "alignment_source": row.get("alignment_source", "none"),
         "alignment_confidence": row.get("alignment_confidence", ""),
         "uncertain": to_int(row.get("uncertain", 0)),
+        "processing_seconds": float(row.get("processing_seconds", 0.0) or 0.0),
     }
 
 
@@ -94,6 +97,7 @@ def write_results_csv(csv_path, results):
                 "alignment_source": result.get("alignment_source", "none"),
                 "alignment_confidence": result.get("alignment_confidence", ""),
                 "uncertain": result.get("uncertain", 0),
+                "processing_seconds": f"{float(result.get('processing_seconds', 0.0) or 0.0):.6f}",
             })
 
 
@@ -130,9 +134,10 @@ def load_results_from_csv(csv_path):
             for row in reader:
                 if not row:
                     continue
-                if len(row) < len(CURRENT_SCHEMA_FIELDS):
-                    continue
-                mapped = {field: row[i].strip() if i < len(row) else "" for i, field in enumerate(CURRENT_SCHEMA_FIELDS)}
+                mapped = {
+                    field: row[i].strip() if i < len(row) else ""
+                    for i, field in enumerate(CURRENT_SCHEMA_FIELDS)
+                }
                 try:
                     results.append(build_result(mapped))
                 except Exception:

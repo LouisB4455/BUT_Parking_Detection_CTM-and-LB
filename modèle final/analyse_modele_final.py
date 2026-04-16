@@ -4,6 +4,7 @@ import glob
 import os
 import pickle
 import re
+import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -89,13 +90,17 @@ def select_profile_for_frame(frame_path: str, profiles: List[Dict[str, Any]]) ->
     if exact:
         return exact[0]
 
+    active = [p for p in profiles if p.get("is_active")]
+    if active:
+        return active[0]
+
     # Allow a truly generic profile only when no exact year exists.
     generic = [p for p in profiles if p.get("year_hint") is None]
     if generic:
         return generic[0]
 
-    # Important safety: do not fall back to another year (e.g., 2024 on 2026 images).
-    return None
+    # If no generic profile exists, keep the first available profile so the zone remains visible.
+    return profiles[0]
 
 
 def load_forbidden_zone_profiles(path: str) -> List[Dict[str, Any]]:
@@ -262,8 +267,12 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument("--model-path", default="yolov8m.pt")
     parser.add_argument("--conf", type=float, default=0.5)
-    parser.add_argument("--forbidden-overlap-threshold", type=float, default=0.25)
-    parser.add_argument("--forbidden-min-overlap-pixels", type=float, default=40.0)
+    parser.add_argument("--workzone-overlap-threshold", type=float, default=0.25)
+    parser.add_argument("--workzone-min-overlap-pixels", type=float, default=25.0)
+    parser.add_argument("--forbidden-center-tolerance-px", type=float, default=40.0)
+    parser.add_argument("--forbidden-overlap-ratio", type=float, default=None, help=argparse.SUPPRESS)
+    parser.add_argument("--forbidden-center-margin-ratio", type=float, default=None, help=argparse.SUPPRESS)
+    parser.add_argument("--forbidden-center-margin-px", type=float, default=None, help=argparse.SUPPRESS)
     parser.add_argument("--output-folder", default="resultats_modele_final")
     parser.add_argument("--csv-path", default="resultats_modele_final.csv")
     parser.add_argument("--history-csv", default="resultats_modele_final_history.csv")
@@ -327,6 +336,7 @@ def main():
             "alignment_source",
             "alignment_confidence",
             "uncertain",
+            "processing_seconds",
         ])
 
         history_rows = []
@@ -335,6 +345,8 @@ def main():
 
         for frame_idx, img_path in enumerate(image_files):
             print(f"[{frame_idx + 1}/{len(image_files)}] Processing: {img_path}")
+
+            frame_start = time.perf_counter()
 
             frame = cv2.imread(img_path)
             if frame is None:
@@ -346,6 +358,7 @@ def main():
 
             forbidden_zones = forbidden_profile.get("zones", []) if forbidden_profile else []
             work_zone = work_profile.get("zone") if work_profile else None
+            wz_np = to_np_poly(work_zone, dtype=np.int32) if work_zone else None
 
             fp_name = forbidden_profile.get("name") if forbidden_profile else "none"
             wp_name = work_profile.get("name") if work_profile else "none"
@@ -370,39 +383,53 @@ def main():
                     x1, y1, x2, y2 = box.astype(int)
                     cx = (x1 + x2) // 2
                     cy = (y1 + y2) // 2
+                    h = max(1, y2 - y1)
+                    # Use only the very bottom of the vehicle for zone checks to avoid false positives.
+                    foot_y1 = y1 + int(h * 0.75)
                     det_poly = np.array([[x1, y1], [x2, y1], [x2, y2], [x1, y2]], dtype=np.int32)
+                    foot_poly = np.array([[x1, foot_y1], [x2, foot_y1], [x2, y2], [x1, y2]], dtype=np.int32)
                     cars.append({
                         "bbox": (x1, y1, x2, y2),
                         "poly": det_poly,
+                        "foot_poly": foot_poly,
                         "center": (cx, cy),
                         "area": max(1.0, poly_area(det_poly)),
+                        "foot_area": max(1.0, poly_area(foot_poly)),
                     })
                     det_confidences.append(float(det_conf))
 
-            total_cars = len(cars)
             forbidden_np = [to_np_poly(poly, dtype=np.int32) for poly in forbidden_zones]
 
-            cars_in_forbidden = 0
             for car in cars:
-                det_poly = car["poly"]
-                det_area = car["area"]
-                max_forbidden_overlap = 0.0
-                max_forbidden_overlap_px = 0.0
-                for fpoly in forbidden_np:
-                    overlap_area = intersection_area(det_poly, fpoly)
-                    max_forbidden_overlap_px = max(max_forbidden_overlap_px, overlap_area)
-                    max_forbidden_overlap = max(
-                        max_forbidden_overlap,
-                        overlap_area / det_area,
+                car["outside_work_zone"] = False
+                car["forbidden"] = False
+
+                if wz_np is not None:
+                    overlap_work = intersection_area(car["foot_poly"], wz_np)
+                    overlap_work_ratio = overlap_work / car["foot_area"]
+                    car["outside_work_zone"] = not (
+                        overlap_work_ratio >= args.workzone_overlap_threshold
+                        and overlap_work >= args.workzone_min_overlap_pixels
                     )
-                if (
-                    max_forbidden_overlap >= args.forbidden_overlap_threshold
-                    and max_forbidden_overlap_px >= args.forbidden_min_overlap_pixels
-                ):
-                    cars_in_forbidden += 1
+
+                if car["outside_work_zone"]:
+                    continue
+
+                max_center_signed_distance = -1e9
+                for fpoly in forbidden_np:
+                    signed_dist = cv2.pointPolygonTest(
+                        fpoly.astype(np.float32),
+                        (float(car["center"][0]), float(car["center"][1])),
+                        True,
+                    )
+                    max_center_signed_distance = max(max_center_signed_distance, float(signed_dist))
+
+                if max_center_signed_distance >= -args.forbidden_center_tolerance_px:
                     car["forbidden"] = True
-                else:
-                    car["forbidden"] = False
+
+            counted_cars = [car for car in cars if not car.get("outside_work_zone", False)]
+            total_cars = len(counted_cars)
+            cars_in_forbidden = sum(1 for car in counted_cars if car.get("forbidden", False))
 
             cars_legal = total_cars - cars_in_forbidden
             uncertain = 1 if total_cars == 0 else 0
@@ -413,15 +440,21 @@ def main():
             for car in cars:
                 x1, y1, x2, y2 = car["bbox"]
                 cx, cy = car["center"]
-                if car.get("forbidden", False):
+                if car.get("outside_work_zone", False):
+                    color = (0, 165, 255)
+                    label = "HORS ZONE"
+                elif car.get("forbidden", False):
                     color = (0, 0, 255)
-                    label = "FORBIDDEN"
+                    label = "INTERDITE"
                 else:
                     color = (0, 255, 255)
                     label = "CAR"
 
                 cv2.rectangle(output_frame, (x1, y1), (x2, y2), color, 2)
                 cv2.circle(output_frame, (cx, cy), 3, color, -1)
+                if not car.get("outside_work_zone", False):
+                    tol_radius = max(1, int(round(args.forbidden_center_tolerance_px)))
+                    cv2.circle(output_frame, (cx, cy), tol_radius, color, 1)
                 cv2.putText(
                     output_frame,
                     label,
@@ -435,8 +468,7 @@ def main():
             for fpoly in forbidden_np:
                 cv2.polylines(output_frame, [fpoly], True, (0, 0, 255), 2)
 
-            if work_zone:
-                wz_np = to_np_poly(work_zone, dtype=np.int32)
+            if wz_np is not None:
                 cv2.polylines(output_frame, [wz_np], True, (255, 0, 0), 2)
 
             cv2.rectangle(output_frame, (15, 15), (820, 70), (0, 0, 0), -1)
@@ -454,6 +486,8 @@ def main():
             cv2.imwrite(output_name, output_frame)
             print(f"  Saved: {output_name}")
 
+            processing_seconds = max(0.0, time.perf_counter() - frame_start)
+
             rel_image = to_image_relpath(img_path, args.input_folder)
             row = [
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -466,6 +500,7 @@ def main():
                 "disabled",
                 f"{frame_confidence:.4f}",
                 uncertain,
+                f"{processing_seconds:.6f}",
             ]
             writer.writerow(row)
             history_rows.append(row)
@@ -485,6 +520,7 @@ def main():
                 "alignment_source",
                 "alignment_confidence",
                 "uncertain",
+                "processing_seconds",
             ])
         for row in history_rows:
             hist_writer.writerow(row)
