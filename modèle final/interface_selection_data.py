@@ -137,16 +137,6 @@ class DataSelectionApp:
         try:
             py = sys.executable
 
-            self.log("\n=== Nettoyage check manuel ===")
-            check_csv = BASE_DIR / "check_manuel_results.csv"
-            if check_csv.exists():
-                code = self._run_command([py, "nettoyer_check_manuel.py", "--csv", "check_manuel_results.csv"])
-                if code != 0:
-                    self.log(f"[ERREUR] nettoyer_check_manuel.py a retourne {code}")
-                    return
-            else:
-                self.log("[INFO] check_manuel_results.csv absent, nettoyage saute.")
-
             self.log("[INFO] Entrainement batch decouple: utiliser run_batch_training.bat quand souhaite.")
 
             self.log("\n=== Lancement modele final sur sous-dossiers selectionnes ===")
