@@ -1,6 +1,9 @@
-# Python cache
+# Python cache & virtual environment
 __pycache__/
 *.py[cod]
+.venv/
+venv/
+env/
 
 # Training artifacts
 runs/
